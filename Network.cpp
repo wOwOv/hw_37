@@ -1,4 +1,5 @@
 #include <winsock2.h>
+#include "SerialBuffer.h"
 #include "System.h"
 #include "Network.h"
 #include "Contents.h"
@@ -96,7 +97,7 @@ void netStartUp()
 
 }
 
-bool PacketProc(Player* player, SBuffer* buf)
+bool PacketProc(Session* session, SBuffer* buf)
 {
 	HEADER header;
 	buf->GetData((char*)&header, sizeof(HEADER));
@@ -104,31 +105,213 @@ bool PacketProc(Player* player, SBuffer* buf)
 	{
 	case dfPACKET_CS_MOVE_START:
 	{
-		return PacketProc_MoveStart(player, buf);
+		return PacketProc_MoveStart(session, buf);
 		break;
 	}
 	case dfPACKET_CS_MOVE_STOP:
 	{
-		return PacketProc_MoveStop(player, buf);
+		return PacketProc_MoveStop(session, buf);
 		break;
 	}
 	case dfPACKET_CS_ATTACK1:
 	{
-		return PacketProc_Attack1(player, buf);
+		return PacketProc_Attack1(session, buf);
 		break;
 	}
 	case dfPACKET_CS_ATTACK2:
 	{
-		return PacketProc_Attack2(player, buf);
+		return PacketProc_Attack2(session, buf);
 		break;
 	}
 	case dfPACKET_CS_ATTACK3:
 	{
-		return PacketProc_Attack3(player, buf);
+		return PacketProc_Attack3(session, buf);
 		break;
+	}
+	case dfPACKET_CS_ECHO:
+	{
+		return PacketProc_Echo(session, buf);
 	}
 
 	return TRUE;
 	}
 }
 
+//PACKET_SCCREATEME 생성
+void mpSCCREATEME(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 10;
+	header.type = dfPACKET_SC_CREATE_MY_CHARACTER;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y << hp;
+}
+
+//PACKET_SCCREATEOTHER 생성
+void mpSCCREATEOTHER(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 10;
+	header.type = dfPACKET_SC_CREATE_OTHER_CHARACTER;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y << hp;
+}
+
+//PACKET_SCDELETE 생성
+void mpSCDELETE(unsigned int id, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 4;
+	header.type = dfPACKET_SC_DELETE_CHARACTER;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id;
+}
+
+
+//PACKET_SCMOVESTART 생성
+void mpSCMOVESTART(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 9;
+	header.type = dfPACKET_SC_MOVE_START;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y;
+}
+
+//PACKET_SCMOVESTOP 생성
+void mpSCMOVESTOP(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size =9;
+	header.type = dfPACKET_SC_MOVE_STOP;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y;
+}
+
+
+//PACKET_SCATTACK1 생성
+void mpSCATTACK1(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size =9;
+	header.type = dfPACKET_SC_ATTACK1;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y;
+}
+
+//PACKET_SCATTACK2 생성
+void mpSCATTACK2(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 9;
+	header.type = dfPACKET_SC_ATTACK2;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y;
+}
+
+//PACKET_SCATTACK3 생성
+void mpSCATTACK3(unsigned int id, unsigned char dir, unsigned short x, unsigned short y, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 9;
+	header.type = dfPACKET_SC_ATTACK3;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << dir << x << y;
+}
+
+//PACKET_SCDAMAGE 생성
+void mpSCDAMAGE(unsigned int atk, unsigned int tgt, unsigned char hp, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size =9;
+	header.type = dfPACKET_SC_DAMAGE;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << atk << tgt << hp;
+}
+
+//PACKET_SCSYNC 생성
+void mpSCSYNC(unsigned int id, unsigned short x, unsigned short y, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 8;
+	header.type = dfPACKET_SC_SYNC;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << id << x << y;
+}
+
+//PACKET_SCSYNC 생성
+void mpSCECHO(unsigned int time, SBuffer* buf)
+{
+	HEADER header;
+	header.code = 0x89;
+	header.size = 4;
+	header.type = dfPACKET_SC_ECHO;
+
+	buf->PutData((char*)&header, sizeof(HEADER));
+	*buf << time;
+}
+
+extern std::list<Player*> Sector[SECTOR_MAX_Y][SECTOR_MAX_X];
+extern std::unordered_map<unsigned int, Player*> PlayerMap;
+
+//특정 섹터 1개에 보내기
+void SendSectorOne(int SectorX, int SectorY, SBuffer* buf, Session* exceptsession)
+{
+	std::list<Player*>::iterator it = Sector[SectorY][SectorX].begin();
+	for (; it != Sector[SectorY][SectorX].end(); it++)
+	{
+		if ((*it)->session != exceptsession)
+		{
+			int size = buf->GetDataSize();
+			Player* player = *it;
+			int enqret = player->session->SendQ.Enqueue(buf->GetBufferPtr(), size);
+			if (enqret != size)
+			{
+				Disconnect(player);
+			}
+		}
+	}
+}
+
+//특정 1명의 클라에 보내기
+void SendUnicast(Session* session, SBuffer* buf)
+{
+	int size = buf->GetDataSize();
+	int enqret = session->SendQ.Enqueue(buf->GetBufferPtr(), size);
+	if (enqret != size)
+	{
+		Player* player=PlayerMap.find(session->Sessionid)->second;
+		Disconnect(player);
+	}
+
+}
+
+
+//클라 기준 주변 섹터에 보내기
+void SendAround(Session* session, SBuffer* buf, bool me = false)
+{
+	//주변 세션 찾기 최대 9개
+}
+
+//진짜 브로드캐스팅
+void SendBroadcast(Session* session, SBuffer* buf) {}
