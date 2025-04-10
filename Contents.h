@@ -51,6 +51,26 @@
 //-----------------------------------------------------------------
 #define dfERROR_RANGE		50
 
+#define SECTOR_HEIGHT		320
+#define SECTOR_WIDTH		200
+
+#define SECTOR_MAX_Y		20
+#define SECTOR_MAX_X		32
+
+struct SectorAround;
+
+struct SectorPos
+{
+	int x;
+	int y;
+	
+};
+
+struct SectorAround
+{
+	int count;
+	SectorPos around[9];
+};
 
 struct Player
 {
@@ -64,23 +84,22 @@ struct Player
 
 	signed char move;
 	bool remove;
+
+	SectorPos CurSector;
+	SectorPos OldSector;
 };
 
-struct SectorPos
-{
-	int x;
-	int y;
-};
 
-struct SectorAround
-{
-	int count;
-	SectorPos around[9];
-};
 
-bool PacketProc_MoveStart(Player* player, SBuffer* buf);
-bool PacketProc_MoveStop(Player* player, SBuffer* buf);
-bool PacketProc_Attack1(Player* player, SBuffer* buf);
-bool PacketProc_Attack2(Player* player, SBuffer* buf);
-bool PacketProc_Attack3(Player* player, SBuffer* buf);
+bool PacketProc_MoveStart(Session* session, SBuffer* buf);
+bool PacketProc_MoveStop(Session* session, SBuffer* buf);
+bool PacketProc_Attack1(Session* session, SBuffer* buf);
+bool PacketProc_Attack2(Session* session, SBuffer* buf);
+bool PacketProc_Attack3(Session* session, SBuffer* buf);
+bool PacketProc_Echo(Session* session, SBuffer* buf);
+
+void Disconnect(Player* player);
+
+void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround);
+
 #endif
