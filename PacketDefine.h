@@ -1,10 +1,30 @@
-#ifndef __PROTOCOL__
-#define __PROTOCOL__
+/////////////////////////////////////////////////////////////////////
+// www.gamecodi.com						이주행 master@gamecodi.com
+//
+//
+/////////////////////////////////////////////////////////////////////
+/*---------------------------------------------------------------
+
+패킷데이터 정의.
 
 
-#define dfNETWORK_PORT		20000
+자신의 캐릭터에 대한 패킷을 서버에게 보낼 때, 모두 자신이 먼저
+액션을 취함과 동시에 패킷을 서버로 보내주도록 한다.
+
+- 이동 키 입력 시 이동동작을 취함과 동시에 이동 패킷을 보내도록 한다.
+- 공격키 입력 시 공격 동작을 취하면서 패킷을 보낸다.
+- 충돌 처리 및 데미지에 대한 정보는 서버에서 처리 후 통보하게 된다.
 
 
+---------------------------------------------------------------*/
+
+#ifndef __PACKET_DEFINE__
+#define __PACKET_DEFINE__
+#define WINDOWS_IGNORE_PACKING_MISMATCH
+#pragma pack(1)
+
+//---------------------------------------------------------------
+// 패킷헤더
 
 struct HEADER
 {
@@ -12,9 +32,8 @@ struct HEADER
 	unsigned char size;	//패킷 사이즈
 	unsigned char type; //패킷 타입
 };
+//---------------------------------------------------------------
 
-
-#define dfPACKET_CODE		0x89
 
 
 
@@ -26,13 +45,15 @@ struct HEADER
 // 자신의 최초 위치, HP 를 받게 된다. (처음에 한번 받게 됨)
 // 
 // 이 패킷을 받으면 자신의 ID,X,Y,HP 를 저장하고 캐릭터를 생성시켜야 한다.
-//
-//	4	-	ID
-//	1	-	Direction
-//	2	-	X
-//	2	-	Y
-//	1	-	HP
-//
+struct PACKET_SCCREATEME
+{
+	unsigned int id;
+	unsigned char direction; //(LL / RR)
+	unsigned short x;
+	unsigned short y;
+	unsigned char hp;
+};
+
 //---------------------------------------------------------------
 
 
@@ -41,15 +62,15 @@ struct HEADER
 // 다른 클라이언트의 캐릭터 생성 패킷		Server -> Client
 //
 // 처음 서버에 접속시 이미 접속되어 있던 캐릭터들의 정보
-// 또는 게임중에 접속된 클라이언트들의 생성 용 정보.
-//
-//
-//	4	-	ID
-//	1	-	Direction
-//	2	-	X
-//	2	-	Y
-//	1	-	HP
-//
+// 또는 게임중에 접속된 클라이언트들의 생성용 정보.
+struct PACKET_SCCREATEOTHER
+{
+	unsigned int id;
+	unsigned char direction; //(LL / RR)
+	unsigned short x;
+	unsigned short y;
+	unsigned char hp;
+};
 //---------------------------------------------------------------
 
 
@@ -59,7 +80,10 @@ struct HEADER
 //
 // 캐릭터의 접속해제 또는 캐릭터가 죽었을때 전송됨.
 //
-//	4	-	ID
+struct PACKET_SCDELETE
+{
+	unsigned int id;
+};
 //
 //---------------------------------------------------------------
 
@@ -74,11 +98,13 @@ struct HEADER
 // 보내줘야 한다.
 //
 // (왼쪽 이동중 위로 이동 / 왼쪽 이동중 왼쪽 위로 이동... 등등)
-//
-//	1	-	Direction	( 방향 디파인 값 8방향 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_CSMOVESTART
+{
+	unsigned char direction; //방향 디파인 값 8방향 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 #define dfPACKET_MOVE_DIR_LL					0
 #define dfPACKET_MOVE_DIR_LU					1
@@ -101,7 +127,14 @@ struct HEADER
 // 
 // 패킷 수신 시 해당 키가 계속해서 눌린것으로 생각하고
 // 해당 방향으로 계속 이동을 하고 있어야만 한다.
-//
+struct PACKET_SCMOVESTART
+{
+	unsigned int id;
+	unsigned char direction; //방향 디파인 값 8방향 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //	4	-	ID
 //	1	-	Direction	( 방향 디파인 값 8방향 )
 //	2	-	X
@@ -117,11 +150,15 @@ struct HEADER
 // 캐릭터 이동중지 패킷						Client -> Server
 //
 // 이동중 키보드 입력이 없어서 정지되었을 때, 이 패킷을 서버에 보내준다.
-//
-//	1	-	Direction	( 방향 디파인 값 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+// 이동중 방향 전환시에는 스탑을 보내지 않는다.
+struct PACKET_CSMOVESTOP
+{
+	unsigned char direction; //방향 디파인 값 8방향 사용
+	unsigned short x;
+	unsigned short y;
+};
+
+
 //---------------------------------------------------------------
 
 
@@ -131,12 +168,14 @@ struct HEADER
 //
 // ID 에 해당하는 캐릭터가 이동을 멈춘것이므로 
 // 캐릭터를 찾아서 방향과, 좌표를 입력해주고 멈추도록 처리한다.
-//
-//	4	-	ID
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_SCMOVESTOP
+{
+	unsigned int id;
+	unsigned char direction; //방향 디파인 값 8방향 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 
 
@@ -149,11 +188,13 @@ struct HEADER
 // 충돌 및 데미지에 대한 결과는 서버에서 알려 줄 것이다.
 //
 // 공격 동작 시작시 한번만 서버에게 보내줘야 한다.
-//
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y	
-//
+struct PACKET_CSATTACK1
+{
+	unsigned char direction; //방향 디파인 값. 좌/우만 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 
 #define	dfPACKET_SC_ATTACK1						21
@@ -162,12 +203,14 @@ struct HEADER
 //
 // 패킷 수신시 해당 캐릭터를 찾아서 공격1번 동작으로 액션을 취해준다.
 // 방향이 다를 경우에는 해당 방향으로 바꾼 후 해준다.
-//
-//	4	-	ID
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_SCATTACK1
+{
+	unsigned int id;
+	unsigned char direction; //방향 디파인 값. 좌/우만 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 
 
@@ -180,11 +223,13 @@ struct HEADER
 // 충돌 및 데미지에 대한 결과는 서버에서 알려 줄 것이다.
 //
 // 공격 동작 시작시 한번만 서버에게 보내줘야 한다.
-//
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_CSATTACK2
+{
+	unsigned char direction; //방향 디파인 값. 좌/우만 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 
 #define	dfPACKET_SC_ATTACK2						23
@@ -193,12 +238,14 @@ struct HEADER
 //
 // 패킷 수신시 해당 캐릭터를 찾아서 공격2번 동작으로 액션을 취해준다.
 // 방향이 다를 경우에는 해당 방향으로 바꾼 후 해준다.
-//
-//	4	-	ID
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_SCATTACK2
+{
+	unsigned int id;
+	unsigned char direction; //방향 디파인 값. 좌/우만 사용
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 
 #define	dfPACKET_CS_ATTACK3						24
@@ -209,11 +256,12 @@ struct HEADER
 // 충돌 및 데미지에 대한 결과는 서버에서 알려 줄 것이다.
 //
 // 공격 동작 시작시 한번만 서버에게 보내줘야 한다.
-//
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_CSATTACK3
+{
+	unsigned char direction; //방향 디파인 값. 좌/우만 사용
+	unsigned short x;
+	unsigned short y;
+};
 //---------------------------------------------------------------
 
 #define	dfPACKET_SC_ATTACK3						25
@@ -222,12 +270,13 @@ struct HEADER
 //
 // 패킷 수신시 해당 캐릭터를 찾아서 공격3번 동작으로 액션을 취해준다.
 // 방향이 다를 경우에는 해당 방향으로 바꾼 후 해준다.
-//
-//	4	-	ID
-//	1	-	Direction	( 방향 디파인 값. 좌/우만 사용 )
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_SCATTACK3
+{
+	unsigned int id;
+	unsigned char direction; //방향 디파인 값. 좌/우만 사용
+	unsigned short x;
+	unsigned short y;
+};
 //---------------------------------------------------------------
 
 
@@ -239,11 +288,35 @@ struct HEADER
 // 캐릭터 데미지 패킷							Server -> Client
 //
 // 공격에 맞은 캐릭터의 정보를 보냄.
-//
+struct PACKET_SCDAMAGE
+{
+	unsigned int atkid;
+	unsigned int dmgid;
+	unsigned char dmghp;
+};
 //	4	-	AttackID	( 공격자 ID )
 //	4	-	DamageID	( 피해자 ID )
 //	1	-	DamageHP	( 피해자 HP )
 //
+//---------------------------------------------------------------
+
+
+
+
+
+
+
+
+// 사용안함...
+#define	dfPACKET_CS_SYNC						250
+//---------------------------------------------------------------
+// 동기화를 위한 패킷					Client -> Server
+struct PACKET_CSSYNC
+{
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
 
 
@@ -253,36 +326,16 @@ struct HEADER
 //
 // 서버로부터 동기화 패킷을 받으면 해당 캐릭터를 찾아서
 // 캐릭터 좌표를 보정해준다.
-//
-//	4	-	ID
-//	2	-	X
-//	2	-	Y
-//
+struct PACKET_SCSYNC
+{
+	unsigned int id;
+	unsigned short x;
+	unsigned short y;
+};
+
 //---------------------------------------------------------------
-
-
-
-#define	dfPACKET_CS_ECHO						252
-//---------------------------------------------------------------
-// Echo 용 패킷					Client -> Server
-//
-//	4	-	Time
-//
-//---------------------------------------------------------------
-
-#define	dfPACKET_SC_ECHO						253
-//---------------------------------------------------------------
-// Echo 응답 패킷				Server -> Client
-//
-//	4	-	Time
-//
-//---------------------------------------------------------------
-
-
-
-
-
 
 
 
 #endif
+

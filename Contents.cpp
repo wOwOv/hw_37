@@ -1,24 +1,43 @@
-#include "Contents.h"
-#include "SerialBuffer.h"
-#include "Protocol.h"
-#include "System.h"
-#include "SerialBuffer.h"
-#include <stdlib.h>
+ï»¿//#include "Struct.h"
 
-bool PacketProc_MoveStart(Player* player, SBuffer* buf)
+#include "Network.h"
+#include "SerialBuffer.h"
+
+#include "Messagestub.h"
+#include "Messageproxy.h"
+#include "Protocol.h"
+#include "Contents.h"
+#include "System.h"
+#include <iostream>
+#include <list>
+#include <unordered_map>
+
+
+std::list<Player*> Sector[SECTOR_MAX_Y][SECTOR_MAX_X];
+std::unordered_map<unsigned int, Player*> PlayerMap;
+
+
+bool ProcCreateMe(Player* player, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp) { return true; }
+bool ProcCreateOther(Player* player, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp) { return true; }
+bool ProcDelete(Player* player) { return true; }
+
+
+bool ProcMoveStart(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#MOVESTART# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
+
 	}
-	else
-	{
-		//player ¿òÁ÷ÀÓ Á¤º¸ º¯°æ
+		//player ì›€ì§ìž„ ì •ë³´ ë³€ê²½
 		switch (dir)
 		{
 		case dfPACKET_MOVE_DIR_LL:
@@ -36,37 +55,33 @@ bool PacketProc_MoveStart(Player* player, SBuffer* buf)
 		player->x = x;
 		player->y = y;
 
-		_LOG(LOG_LEVEL_DEBUG,L"Recv CSMOVESTART id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
+		
+		
+		//í•´ë‹¹ í”Œë ˆì´ì–´ì— ëŒ€í•œ ì›€ì§ìž„ ì •ë³´ ë³¸ì¸ ì œì™¸ ê·¼ì²˜sectorì— send
+		buf.Clear();
+		mpSCMOVESTART(player->id, player->move, player->x, player->y, &buf);
+		SendAround(player->session, &buf, false);
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î¿¡ ´ëÇÑ ¿òÁ÷ÀÓ Á¤º¸ º»ÀÎ Á¦¿Ü ÀüÃ¼¿¡°Ô send
-		buf->Clear();
-		mpSCMOVESTART(player->id, player->move, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir;
-		unsigned short mx;
-		unsigned short my;
-		*buf >> mid >> mdir >> mx >> my;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast SCMOVESTART id:%d direction:%d x:%d y:%d \n", mid, mdir, mx, my);
-	}
 	return true;
 }
-bool PacketProc_MoveStop(Player* player, SBuffer* buf)
+
+
+bool ProcMoveStop(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#MOVESTOP# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//player ¿òÁ÷ÀÓ Á¤º¸ º¯°æ
+	
+		//player ì›€ì§ìž„ ì •ë³´ ë³€ê²½
 		switch (dir)
 		{
 		case dfPACKET_MOVE_DIR_LL:
@@ -84,106 +99,75 @@ bool PacketProc_MoveStop(Player* player, SBuffer* buf)
 		player->x = x;
 		player->y = y;
 
-		_LOG(LOG_LEVEL_DEBUG, L"Recv CSMOVESTOP id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î¿¡ ´ëÇÑ ¿òÁ÷ÀÓ Á¤º¸ º»ÀÎ Á¦¿Ü ÀüÃ¼¿¡°Ô send
-		buf->Clear();
-		mpSCMOVESTOP(player->id, dir, player->x, player->y, buf);
+		//í•´ë‹¹ í”Œë ˆì´ì–´ì— ëŒ€í•œ ì›€ì§ìž„ ì •ë³´ ë³¸ì¸ ì œì™¸ ì „ì²´ì—ê²Œ send
+		buf.Clear();
+		mpSCMOVESTOP(player->id, dir, player->x, player->y, &buf);
+		SendAround(player->session, &buf, false);
+		//BProcMoveStop(player, player->id, dir, player->x, player->y);
 
-		SendBroadcast(player, buf);
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir;
-		unsigned short mx;
-		unsigned short my;
-		*buf >> mid >> mdir >> mx >> my;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast SCMOVESTOP id:%d direction:%d x:%d y:%d \n", mid, mdir, mx, my);
-	}
+	
 	return true;
 }
 
-bool PacketProc_Attack1(Player* player, SBuffer* buf)
+bool ProcAttack1(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#ATTACK1# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ Ã³¸®
+
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ ì²˜ë¦¬
 		player->direction = dir;
 		player->x = x;
 		player->y = y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ send()
-		buf->Clear();
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ send()
+		buf.Clear();
+		mpSCATTACK1(player->id, player->direction, player->x, player->y, &buf);
+		SendAround(player->session, &buf, false);
+		//BProcAttack1(player, player->id, player->direction, player->x, player->y);
 
-		mpSCATTACK1(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack1 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
-
-		//µ¥¹ÌÁöÃ³¸®
+		//ë°ë¯¸ì§€ì²˜ë¦¬
 		AttackPlayer(player, dfPACKET_CS_ATTACK1);
 
-	}
+
 	return true;
 }
-bool PacketProc_Attack2(Player* player, SBuffer* buf)
-{
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
+bool ProcAttack2(Player* player, unsigned char dir, unsigned short x, unsigned short y)
+{
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
 		Disconnect(player);
 	}
 	else
 	{
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ Ã³¸®
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ ì²˜ë¦¬
 		player->direction = dir;
 		player->x = x;
 		player->y = y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ send()
-		buf->Clear();
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ send()
+		BProcAttack2(player, player->id, player->direction, player->x, player->y);
 
-		mpSCATTACK2(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack2 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
-
-		//µ¥¹ÌÁöÃ³¸®
+		//ë°ë¯¸ì§€ì²˜ë¦¬
 		AttackPlayer(player, dfPACKET_CS_ATTACK2);
 
 	}
 	return true;
 }
-bool PacketProc_Attack3(Player* player, SBuffer* buf)
+
+bool ProcAttack3(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
@@ -191,49 +175,698 @@ bool PacketProc_Attack3(Player* player, SBuffer* buf)
 	}
 	else
 	{
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ Ã³¸®
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ ì²˜ë¦¬
 		player->direction = dir;
 		player->x = x;
 		player->y = y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ send()
-		buf->Clear();
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ send()
+		BProcAttack3(player, player->id, player->direction, player->x, player->y);
 
-		mpSCATTACK3(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack1 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
-
-		//µ¥¹ÌÁöÃ³¸®
+		//ë°ë¯¸ì§€ì²˜ë¦¬
 		AttackPlayer(player, dfPACKET_CS_ATTACK3);
 
 	}
 	return true;
 }
 
-void Disconnect(Player* player)
+bool ProcDamage(Player* player, unsigned int tgt, unsigned char hp) { return true; }
+
+bool ProcEcho(Player* player, unsigned int time)
 {
-	//list¿¡¼­ »èÁ¦ ¿¹Á¤ Ç¥½Ã
-	player->remove = true;
-
-	//player »èÁ¦ ¸Þ½ÃÁö Broadcast
 	SBuffer buf;
-	mpSCDELETE(player->id, &buf);
+	mpSCECHO(time, &buf);
+	SendUnicast(player, &buf);
 
-	SendBroadcast(player, &buf);
+	return true;
 }
 
-//Æ¯Á¤ ¼½ÅÍ 1°³¿¡ º¸³»±â
-void SendSectorOne(int SectorX, int SectorY, SBuffer* buf,Session* session){}
-//Æ¯Á¤ 1¸íÀÇ Å¬¶ó¿¡ º¸³»±â
-void SendUnicast(Session* session, SBuffer* buf, bool me = false) {}
-//Å¬¶ó ±âÁØ ÁÖº¯ ¼½ÅÍ¿¡ º¸³»±â
-void SendAround(Session* session, SBuffer* buf) {}
-//ÁøÂ¥ ºê·ÎµåÄ³½ºÆÃ
-void SendBroadcast(Session* session, SBuffer* buf) {}
+void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround)
+{
+	sectoraround->count = 0;
+	if (SectorX > 0)
+	{
+		//â†–
+		if (SectorY > 0)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX - 1;
+			sectoraround->around[sectoraround->count].y = SectorY - 1;
+			sectoraround->count++;
+		}
+
+		//â†™
+		if (SectorY < SECTOR_MAX_Y - 1)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX - 1;
+			sectoraround->around[sectoraround->count].y = SectorY + 1;
+			sectoraround->count++;
+		}
+
+		//â­ 
+		sectoraround->around[sectoraround->count].x = SectorX - 1;
+		sectoraround->around[sectoraround->count].y = SectorY;
+		sectoraround->count++;
+	}
+
+	//â­¡
+	if (SectorY > 0)
+	{
+		sectoraround->around[sectoraround->count].x = SectorX;
+		sectoraround->around[sectoraround->count].y = SectorY - 1;
+		sectoraround->count++;
+	}
+	//â­£
+	if (SectorY < SECTOR_MAX_Y - 1)
+	{
+		sectoraround->around[sectoraround->count].x = SectorX;
+		sectoraround->around[sectoraround->count].y = SectorY + 1;
+		sectoraround->count++;
+	}
+
+	if (SectorX < SECTOR_MAX_X - 1)
+	{
+		//â†—
+		if (SectorY > 0)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX + 1;
+			sectoraround->around[sectoraround->count].y = SectorY - 1;
+			sectoraround->count++;
+		}
+
+		//â†˜
+		if (SectorY < SECTOR_MAX_Y - 1)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX + 1;
+			sectoraround->around[sectoraround->count].y = SectorY + 1;
+			sectoraround->count++;
+		}
+
+		//â­¢
+		sectoraround->around[sectoraround->count].x = SectorX + 1;
+		sectoraround->around[sectoraround->count].y = SectorY;
+		sectoraround->count++;
+	}
+
+	//ë³¸ì¸ì´ ìžˆëŠ” ì„¹í„°
+	sectoraround->around[sectoraround->count].x = SectorX;
+	sectoraround->around[sectoraround->count].y = SectorY;
+	sectoraround->count++;
+
+
+}
+
+void GetUpdateSectorAround(Player* player, SectorAround* RemoveSec, SectorAround* AddSec)
+{
+	if (player->CurSector.x < player->OldSector.x)
+	{
+		//ì´ë™ë°©í–¥ â†–
+		if (player->CurSector.y < player->OldSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+
+				//â†˜
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­¢
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+			//â­£
+			if (player->OldSector.y < SECTOR_MAX_Y - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+
+			//â†™
+			if (player->OldSector.x > 0)
+			{
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x > 0)
+			{
+				//â†–
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†™
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­ 
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+
+			//â­¡
+			if (player->CurSector.y > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+
+			//â†—
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+			}
+
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â†™
+		if (player->CurSector.y > player->OldSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+
+				//â†˜
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­¢
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+			//â­¡
+			if (player->OldSector.y > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+
+			//â†–
+			if (player->OldSector.x > 0)
+			{
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x > 0)
+			{
+				//â†–
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†™
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­ 
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+
+			//â­£
+			if (player->CurSector.y < SECTOR_MAX_Y - 1)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+				AddSec->count++;
+			}
+
+			//â†˜
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+			}
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â­ 
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†˜
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+				//â­¢
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x > 0)
+			{
+				//â†–
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†™
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+				//â­ 
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+
+			}
+			return;
+		}
+
+	}
+	//ì´ë™ë°©í–¥ â­¡
+	if (player->CurSector.y < player->OldSector.y)
+	{
+		RemoveSec->count = 0;
+		if (player->OldSector.y < SECTOR_MAX_Y - 1)
+		{
+			//â†™
+			if (player->OldSector.x > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+			//â†˜
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+			//â­£
+			RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+			RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+			RemoveSec->count++;
+
+		}
+
+		AddSec->count = 0;
+		if (player->CurSector.y > 0)
+		{
+			//â†–
+			if (player->CurSector.x > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+			//â†—
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+			//â­¡
+			AddSec->around[AddSec->count].x = player->CurSector.x;
+			AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+			AddSec->count++;
+
+		}
+		return;
+	}
+
+	//ì´ë™ë°©í–¥ â­£
+	if (player->CurSector.y > player->OldSector.y)
+	{
+		RemoveSec->count = 0;
+		if (player->OldSector.y > 0)
+		{
+			//â†–
+			if (player->OldSector.x > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+			//â†—
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+			//â­¡
+			RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+			RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+			RemoveSec->count++;
+
+		}
+
+		AddSec->count = 0;
+		if (player->CurSector.y < SECTOR_MAX_Y - 1)
+		{
+			//â†™
+			if (player->CurSector.x > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+				AddSec->count++;
+			}
+			//â†˜
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				AddSec->around[AddSec->count].x = player->OldSector.x + 1;
+				AddSec->around[AddSec->count].y = player->OldSector.y + 1;
+				AddSec->count++;
+			}
+			//â­£
+			AddSec->around[AddSec->count].x = player->CurSector.x;
+			AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+			AddSec->count++;
+
+		}
+		return;
+	}
+
+
+	if (player->CurSector.x > player->OldSector.x)
+	{
+		//ì´ë™ë°©í–¥ â†—
+		if (player->CurSector.y < player->CurSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x > 0)
+			{
+				//â†–
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†™
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­ 
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+
+			//â­£
+			if (player->OldSector.y < SECTOR_MAX_Y - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+
+			//â†˜
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+
+				//â†˜
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­¢
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+			//â­¡
+			if (player->CurSector.y > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+
+			//â†–
+			if (player->CurSector.x > 0)
+			{
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+			}
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â†˜
+		if (player->CurSector.y > player->OldSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x > 0)
+			{
+				//â†–
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†™
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­ 
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+
+			//â­¡
+			if (player->OldSector.y > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+
+			//â†—
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+
+				//â†˜
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­¢
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+			//â­£
+			if (player->CurSector.y < SECTOR_MAX_Y - 1)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+				AddSec->count++;
+			}
+
+			//â†™
+			if (player->CurSector.x > 0)
+			{
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+			}
+
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â­¢
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x > 0)
+			{
+				//â†–
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†™
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+				//â­ 
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†˜
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+				//â­¢
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+
+			}
+
+
+			return;
+		}
+
+	}
+}

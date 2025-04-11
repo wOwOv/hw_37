@@ -1,17 +1,27 @@
 #ifndef __CONTENTS__
 #define __CONTENTS__
 
-#include "Network.h"
-
 
 #define dfPACKET_CODE		0x89
+
+
+
+//-----------------------------------------------------------------
+// 화면 이동영역
+//-----------------------------------------------------------------
+#define dfRANGE_MOVE_TOP	50
+#define dfRANGE_MOVE_LEFT	10
+#define dfRANGE_MOVE_RIGHT	630
+#define dfRANGE_MOVE_BOTTOM	470
+
+
 
 //-----------------------------------------------------------------
 // 30초 이상이 되도록 아무런 메시지 수신도 없는경우 접속 끊음.
 //-----------------------------------------------------------------
 #define dfNETWORK_PACKET_RECV_TIMEOUT	30000
 
-
+/*
 //-----------------------------------------------------------------
 // 화면 이동 범위.
 //-----------------------------------------------------------------
@@ -19,6 +29,7 @@
 #define dfRANGE_MOVE_LEFT	0
 #define dfRANGE_MOVE_RIGHT	6400
 #define dfRANGE_MOVE_BOTTOM	6400
+*/
 
 //---------------------------------------------------------------
 // 공격범위.
@@ -42,8 +53,8 @@
 //-----------------------------------------------------------------
 // 캐릭터 이동 속도   // 25fps 기준 이동속도
 //-----------------------------------------------------------------
-#define dfSPEED_PLAYER_X	3	// 3   50fps
-#define dfSPEED_PLAYER_Y	2	// 2   50fps
+#define dfSPEED_PLAYER_X	6	// 3   50fps
+#define dfSPEED_PLAYER_Y	4	// 2   50fps
 
 
 //-----------------------------------------------------------------
@@ -51,25 +62,20 @@
 //-----------------------------------------------------------------
 #define dfERROR_RANGE		50
 
+#define SECTOR_HEIGHT		320
+#define SECTOR_WIDTH		200
 
-struct Player
-{
-	Session* session;
+#define SECTOR_MAX_Y		20
+#define SECTOR_MAX_X		32
 
-	unsigned int id;
-	unsigned char direction;
-	unsigned short x;
-	unsigned short y;
-	signed char hp;
-
-	signed char move;
-	bool remove;
-};
+struct SectorAround;
+struct Session;
 
 struct SectorPos
 {
 	int x;
 	int y;
+
 };
 
 struct SectorAround
@@ -78,9 +84,23 @@ struct SectorAround
 	SectorPos around[9];
 };
 
-bool PacketProc_MoveStart(Player* player, SBuffer* buf);
-bool PacketProc_MoveStop(Player* player, SBuffer* buf);
-bool PacketProc_Attack1(Player* player, SBuffer* buf);
-bool PacketProc_Attack2(Player* player, SBuffer* buf);
-bool PacketProc_Attack3(Player* player, SBuffer* buf);
+struct Player
+{
+	Session* session;
+	unsigned int id;
+	unsigned char direction;
+	unsigned short x;
+	unsigned short y;
+	signed char hp;
+
+	signed char move;
+	bool remove;
+
+	SectorPos CurSector;
+	SectorPos OldSector;
+};
+
+void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround);
+void GetUpdateSectorAround(Player* player, SectorAround* RemoveSec, SectorAround* AddSec);
+
 #endif
