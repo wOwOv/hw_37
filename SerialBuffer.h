@@ -1,7 +1,7 @@
 #ifndef __SERIALBUFFER__
 #define __SERIALBUFFER__
 
-//#include <windows.h>
+#include <windows.h>
 
 class SBuffer
 {
@@ -74,17 +74,17 @@ public:
 	SBuffer& operator << (unsigned char value);
 	SBuffer& operator << (signed char value);
 	SBuffer& operator << (char value);
-	//SBuffer& operator<<(BYTE value);
+	//CBuffer& operator<<(BYTE value);
 
 	SBuffer& operator << (short value);
 	SBuffer& operator << (unsigned short value);
-	//SBuffer& operator << (WORD value);
+	//CBuffer& operator << (WORD value);
 
 	SBuffer& operator << (unsigned int value);
 	SBuffer& operator << (int value);
 	SBuffer& operator << (long value);
 	SBuffer& operator << (float value);
-	//SBuffer& operator << (DWORD value);
+	SBuffer& operator << (DWORD value);
 
 	SBuffer& operator << (__int64 iValue);
 	SBuffer& operator << (double dValue);
@@ -96,17 +96,17 @@ public:
 	SBuffer& operator>>(unsigned char &value);
 	SBuffer& operator>>(signed char& value);
 	SBuffer& operator>>(char &value);
-	//SBuffer& operator>>(BYTE& value);
+	//CBuffer& operator>>(BYTE& value);
 
 	SBuffer& operator>>(short &value);
 	SBuffer& operator>>(unsigned short &value);
-	//SBuffer& operator>>(WORD& value);
+	//CBuffer& operator>>(WORD& value);
 
 	SBuffer& operator >> (unsigned int value);
 	SBuffer& operator>>(int &value);
 	SBuffer& operator>>(long &value);
 	SBuffer& operator>>(float &value);
-	//SBuffer& operator>>(DWORD& value);
+	SBuffer& operator>>(DWORD& value);
 
 	SBuffer& operator>>(__int64 &value);
 	SBuffer& operator>>(double &value);

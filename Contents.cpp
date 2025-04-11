@@ -1,16 +1,19 @@
-#include "Contents.h"
+#include "Messagestub.h"
+#include "Struct.h"
 #include "SerialBuffer.h"
-#include "Protocol.h"
-#include "System.h"
-#include "SerialBuffer.h"
-#include <stdlib.h>
+#include "SendCast.h"
+#include "Messageproxy.h"
+#include <iostream>
 
-bool PacketProc_MoveStart(Player* player, SBuffer* buf)
+
+
+bool ProcCreateMe(Player* player, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp) { return true; }
+bool ProcCreateOther(Player* player, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp) { return true; }
+bool ProcDelete(Player* player) { return true; }
+
+
+bool ProcMoveStart(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
@@ -36,30 +39,18 @@ bool PacketProc_MoveStart(Player* player, SBuffer* buf)
 		player->x = x;
 		player->y = y;
 
-		_LOG(LOG_LEVEL_DEBUG,L"Recv CSMOVESTART id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
+		printf("Recv CSMOVESTART id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
 
 		//해당 플레이어에 대한 움직임 정보 본인 제외 전체에게 send
-		buf->Clear();
-		mpSCMOVESTART(player->id, player->move, player->x, player->y, buf);
+		BProcMoveStart(player, player->id, player->move, player->x, player->y);
 
-		SendBroadcast(player, buf);
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir;
-		unsigned short mx;
-		unsigned short my;
-		*buf >> mid >> mdir >> mx >> my;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast SCMOVESTART id:%d direction:%d x:%d y:%d \n", mid, mdir, mx, my);
 	}
 	return true;
 }
-bool PacketProc_MoveStop(Player* player, SBuffer* buf)
-{
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
+
+bool ProcMoveStop(Player* player, unsigned char dir, unsigned short x, unsigned short y)
+{
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
 		Disconnect(player);
@@ -84,30 +75,18 @@ bool PacketProc_MoveStop(Player* player, SBuffer* buf)
 		player->x = x;
 		player->y = y;
 
-		_LOG(LOG_LEVEL_DEBUG, L"Recv CSMOVESTOP id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
+		printf("Recv CSMOVESTOP id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
 
 		//해당 플레이어에 대한 움직임 정보 본인 제외 전체에게 send
-		buf->Clear();
-		mpSCMOVESTOP(player->id, dir, player->x, player->y, buf);
 
-		SendBroadcast(player, buf);
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir;
-		unsigned short mx;
-		unsigned short my;
-		*buf >> mid >> mdir >> mx >> my;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast SCMOVESTOP id:%d direction:%d x:%d y:%d \n", mid, mdir, mx, my);
+		BProcMoveStop(player, player->id, dir, player->x, player->y);
+
 	}
 	return true;
 }
 
-bool PacketProc_Attack1(Player* player, SBuffer* buf)
+bool ProcAttack1(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
@@ -121,18 +100,8 @@ bool PacketProc_Attack1(Player* player, SBuffer* buf)
 		player->y = y;
 
 		//해당 플레이어 공격 정보 send()
-		buf->Clear();
 
-		mpSCATTACK1(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack1 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
+		BProcAttack1(player, player->id, player->direction, player->x, player->y);
 
 		//데미지처리
 		AttackPlayer(player, dfPACKET_CS_ATTACK1);
@@ -140,13 +109,9 @@ bool PacketProc_Attack1(Player* player, SBuffer* buf)
 	}
 	return true;
 }
-bool PacketProc_Attack2(Player* player, SBuffer* buf)
-{
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
+bool ProcAttack2(Player* player, unsigned char dir, unsigned short x, unsigned short y)
+{
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
 		Disconnect(player);
@@ -159,18 +124,7 @@ bool PacketProc_Attack2(Player* player, SBuffer* buf)
 		player->y = y;
 
 		//해당 플레이어 공격 정보 send()
-		buf->Clear();
-
-		mpSCATTACK2(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack2 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
+		BProcAttack2(player, player->id, player->direction, player->x, player->y);
 
 		//데미지처리
 		AttackPlayer(player, dfPACKET_CS_ATTACK2);
@@ -178,12 +132,9 @@ bool PacketProc_Attack2(Player* player, SBuffer* buf)
 	}
 	return true;
 }
-bool PacketProc_Attack3(Player* player, SBuffer* buf)
+
+bool ProcAttack3(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
@@ -197,18 +148,7 @@ bool PacketProc_Attack3(Player* player, SBuffer* buf)
 		player->y = y;
 
 		//해당 플레이어 공격 정보 send()
-		buf->Clear();
-
-		mpSCATTACK3(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack1 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
+		BProcAttack3(player, player->id, player->direction, player->x, player->y);
 
 		//데미지처리
 		AttackPlayer(player, dfPACKET_CS_ATTACK3);
@@ -217,23 +157,12 @@ bool PacketProc_Attack3(Player* player, SBuffer* buf)
 	return true;
 }
 
-void Disconnect(Player* player)
+bool ProcDamage(Player* player, unsigned int tgt, unsigned char hp) { return true; }
+
+bool ProcEcho(Player* player, unsigned int time)
 {
-	//list에서 삭제 예정 표시
-	player->remove = true;
 
-	//player 삭제 메시지 Broadcast
-	SBuffer buf;
-	mpSCDELETE(player->id, &buf);
 
-	SendBroadcast(player, &buf);
+	return true;
 }
 
-//특정 섹터 1개에 보내기
-void SendSectorOne(int SectorX, int SectorY, SBuffer* buf,Session* session){}
-//특정 1명의 클라에 보내기
-void SendUnicast(Session* session, SBuffer* buf, bool me = false) {}
-//클라 기준 주변 섹터에 보내기
-void SendAround(Session* session, SBuffer* buf) {}
-//진짜 브로드캐스팅
-void SendBroadcast(Session* session, SBuffer* buf) {}
