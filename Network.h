@@ -16,10 +16,7 @@ struct SectorAround;
 //player제외하고 전체sendQ에 Enqueue
 //void SendBroadcast(Player* player, SBuffer* buf);
 
-//Disconnect
-void Disconnect(Player* player);
 
-void AttackPlayer(Player* player, unsigned char type);
 
 void networkStartUp();
 void networkCleanUp();

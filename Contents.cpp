@@ -99,6 +99,51 @@ bool ProcMoveStop(Player* player, unsigned char dir, unsigned short x, unsigned 
 		player->x = x;
 		player->y = y;
 
+		//sector 계산
+		player->OldSector.x = player->CurSector.x;
+		player->OldSector.y = player->CurSector.y;
+
+		player->CurSector.x = player->x / SECTOR_WIDTH;
+		player->CurSector.y = player->y / SECTOR_HEIGHT;
+
+		//sector변화가 있다면
+		if (player->OldSector.x != player->CurSector.x && player->OldSector.y != player->CurSector.y)
+		{
+			//섹터옮기기
+			std::list<Player*>::iterator it = Sector[player->OldSector.y][player->OldSector.x].begin();
+			for (; it != Sector[player->OldSector.y][player->OldSector.x].end(); it++)
+			{
+				Player* tgt = *it;
+				if (tgt->id == player->id)
+				{
+					Sector[player->OldSector.y][player->OldSector.x].erase(it);
+					break;
+				}
+			}
+
+			Sector[player->CurSector.y][player->CurSector.x].push_back(player);
+
+
+
+			SectorAround removesec;
+			SectorAround addsec;
+			GetUpdateSectorAround(player, &removesec, &addsec);
+
+			//제거해야할 sector들에 delete메시지 보내기
+			SBuffer buf;
+			mpSCDELETE(player->id, &buf);
+			SendSectorList(&removesec, &buf, false);
+
+			//추가해야할 sector들에 create메시지 보내기
+			buf.Clear();
+			mpSCCREATEOTHER(player->id, player->direction, player->x, player->y, player->hp, &buf);
+			SendSectorList(&addsec, &buf, false);
+			//movestop메시지 까지 보내주기
+			buf.Clear();
+			mpSCMOVESTOP(player->id, player->direction, player->x, player->y, &buf);
+			SendSectorList(&addsec, &buf, false);
+		}
+
 
 		//해당 플레이어에 대한 움직임 정보 본인 제외 전체에게 send
 		buf.Clear();
@@ -145,50 +190,293 @@ bool ProcAttack1(Player* player, unsigned char dir, unsigned short x, unsigned s
 
 bool ProcAttack2(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
+	_LOG(LOG_LEVEL_DEBUG, L"#ATTACK2# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
+
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//해당 플레이어 공격 정보 처리
-		player->direction = dir;
-		player->x = x;
-		player->y = y;
 
-		//해당 플레이어 공격 정보 send()
-		BProcAttack2(player, player->id, player->direction, player->x, player->y);
+	//해당 플레이어 공격 정보 처리
+	player->direction = dir;
+	player->x = x;
+	player->y = y;
 
-		//데미지처리
-		AttackPlayer(player, dfPACKET_CS_ATTACK2);
+	//해당 플레이어 공격 정보 send()
+	buf.Clear();
+	mpSCATTACK2(player->id, player->direction, player->x, player->y, &buf);
+	SendAround(player->session, &buf, false);
 
-	}
+	//데미지처리
+	AttackPlayer(player, dfPACKET_CS_ATTACK2);
+
+
 	return true;
 }
 
 bool ProcAttack3(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
+	_LOG(LOG_LEVEL_DEBUG, L"#ATTACK3# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//해당 플레이어 공격 정보 처리
-		player->direction = dir;
-		player->x = x;
-		player->y = y;
 
-		//해당 플레이어 공격 정보 send()
-		BProcAttack3(player, player->id, player->direction, player->x, player->y);
+	//해당 플레이어 공격 정보 처리
+	player->direction = dir;
+	player->x = x;
+	player->y = y;
 
-		//데미지처리
-		AttackPlayer(player, dfPACKET_CS_ATTACK3);
+	//해당 플레이어 공격 정보 send()
+	buf.Clear();
+	mpSCATTACK3(player->id, player->direction, player->x, player->y, &buf);
+	SendAround(player->session, &buf, false);
 
-	}
+
+	//데미지처리
+	AttackPlayer(player, dfPACKET_CS_ATTACK3);
+
+
 	return true;
 }
+
+//데미지 입힐 player 찾고 damage패킷 보내기
+void AttackPlayer(Player* player, unsigned char type)
+{
+	if (player->remove == false)
+	{
+		SectorAround sec;
+		GetAttackSectorAround(player, &sec);
+		SBuffer buf;
+		switch (type)
+		{
+		case dfPACKET_CS_ATTACK1:
+		{
+			if (player->direction == dfPACKET_MOVE_DIR_LL)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].begin(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x <= player->x)
+							{
+								if ((player->x - tgtply->x) < dfATTACK1_RANGE_X && abs(player->y - tgtply->y) < dfATTACK1_RANGE_Y)
+								{
+									//hp처리 후 메시지 만들어 전체 send
+									tgtply->hp -= dfATTACK1_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										Disconnect(tgtply);
+									}
+									buf.Clear();
+									mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+									//맞는 player근처 sector에 send
+									SendAround(tgtply->session, &buf, true);
+
+									return;
+								}
+							}
+						}
+					}
+
+				}
+			}
+			if (player->direction == dfPACKET_MOVE_DIR_RR)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].begin(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x >= player->x)
+							{
+								if ((player->x - tgtply->x) < dfATTACK1_RANGE_X && abs(player->y - tgtply->y) < dfATTACK1_RANGE_Y)
+								{
+									//hp처리 후 메시지 만들어 전체 send
+									tgtply->hp -= dfATTACK1_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										Disconnect(tgtply);
+									}
+									buf.Clear();
+									mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+									//맞는 target player근처 sector에 send
+									SendAround(tgtply->session, &buf, true);
+
+									return;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		case dfPACKET_CS_ATTACK2:
+		{
+			if (player->direction == dfPACKET_MOVE_DIR_LL)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].begin(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x <= player->x)
+							{
+								if ((player->x - tgtply->x) < dfATTACK2_RANGE_X && abs(player->y - tgtply->y) < dfATTACK2_RANGE_Y)
+								{
+									//hp처리 후 메시지 만들어 전체 send
+									tgtply->hp -= dfATTACK2_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										Disconnect(tgtply);
+									}
+									buf.Clear();
+									mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+									//맞는 player근처 sector에 send
+									SendAround(tgtply->session, &buf, true);
+
+									return;
+								}
+							}
+						}
+					}
+
+				}
+			}
+			if (player->direction == dfPACKET_MOVE_DIR_RR)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].begin(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x >= player->x)
+							{
+								if ((player->x - tgtply->x) < dfATTACK2_RANGE_X && abs(player->y - tgtply->y) < dfATTACK2_RANGE_Y)
+								{
+									//hp처리 후 메시지 만들어 전체 send
+									tgtply->hp -= dfATTACK2_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										Disconnect(tgtply);
+									}
+									buf.Clear();
+									mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+									//맞는 target player근처 sector에 send
+									SendAround(tgtply->session, &buf, true);
+
+									return;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		case dfPACKET_CS_ATTACK3:
+		{
+			if (player->direction == dfPACKET_MOVE_DIR_LL)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].begin(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x <= player->x)
+							{
+								if ((player->x - tgtply->x) < dfATTACK3_RANGE_X && abs(player->y - tgtply->y) < dfATTACK3_RANGE_Y)
+								{
+									//hp처리 후 메시지 만들어 전체 send
+									tgtply->hp -= dfATTACK3_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										Disconnect(tgtply);
+									}
+									buf.Clear();
+									mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+									//맞는 player근처 sector에 send
+									SendAround(tgtply->session, &buf, true);
+
+									return;
+								}
+							}
+						}
+					}
+
+				}
+			}
+			if (player->direction == dfPACKET_MOVE_DIR_RR)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].begin(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x >= player->x)
+							{
+								if ((player->x - tgtply->x) < dfATTACK3_RANGE_X && abs(player->y - tgtply->y) < dfATTACK3_RANGE_Y)
+								{
+									//hp처리 후 메시지 만들어 전체 send
+									tgtply->hp -= dfATTACK3_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										Disconnect(tgtply);
+									}
+									buf.Clear();
+									mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+									//맞는 target player근처 sector에 send
+									SendAround(tgtply->session, &buf, true);
+
+									return;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		}
+	}
+}
+
 
 bool ProcDamage(Player* player, unsigned int tgt, unsigned char hp) { return true; }
 
@@ -196,10 +484,26 @@ bool ProcEcho(Player* player, unsigned int time)
 {
 	SBuffer buf;
 	mpSCECHO(time, &buf);
-	SendUnicast(player, &buf);
+	SendUnicast(player->session, &buf);
 
 	return true;
 }
+
+
+void Disconnect(Player* player)
+{
+	//list에서 삭제 예정 표시
+	player->remove = true;
+
+	//player 삭제 메시지 Broadcast
+	SBuffer buf;
+	mpSCDELETE(player->id, &buf);
+	SendAround(player->session, &buf, true);
+	//BProcDelete(player, player->id);
+
+}
+
+
 
 void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround)
 {
@@ -213,7 +517,7 @@ void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround)
 			sectoraround->around[sectoraround->count].y = SectorY - 1;
 			sectoraround->count++;
 		}
-
+		
 		//↙
 		if (SectorY < SECTOR_MAX_Y - 1)
 		{
@@ -260,7 +564,7 @@ void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround)
 			sectoraround->around[sectoraround->count].y = SectorY + 1;
 			sectoraround->count++;
 		}
-
+		
 		//⭢
 		sectoraround->around[sectoraround->count].x = SectorX + 1;
 		sectoraround->around[sectoraround->count].y = SectorY;
@@ -869,4 +1173,89 @@ void GetUpdateSectorAround(Player* player, SectorAround* RemoveSec, SectorAround
 		}
 
 	}
+}
+
+void GetAttackSectorAround(Player* player, SectorAround* sec)
+{
+		sec->count = 0;
+		//자기가 속한 섹터
+		sec->around[sec->count].x = player->CurSector.x;
+		sec->around[sec->count].y = player->CurSector.y;
+		sec->count++;
+
+		
+
+	if (player->direction == dfPACKET_MOVE_DIR_LL)
+	{
+		if (player->CurSector.x > 0)
+		{
+			//⭠
+			sec->around[sec->count].x = player->CurSector.x - 1;
+			sec->around[sec->count].y = player->CurSector.y;
+			sec->count++;
+
+			//↖
+			if (player->CurSector.y > 0)
+			{
+				sec->around[sec->count].x = player->CurSector.x - 1;
+				sec->around[sec->count].y = player->CurSector.y - 1;
+				sec->count++;
+			}
+			//↙
+			if (player->CurSector.y < SECTOR_MAX_Y-1)
+			{
+				sec->around[sec->count].x = player->CurSector.x - 1;
+				sec->around[sec->count].y = player->CurSector.y + 1;
+				sec->count++;
+			}
+
+
+		}
+
+	}
+
+	if(player->direction == dfPACKET_MOVE_DIR_RR)
+	{
+		if (player->CurSector.x < SECTOR_MAX_X-1)
+		{
+			//⭢
+			sec->around[sec->count].x = player->CurSector.x + 1;
+			sec->around[sec->count].y = player->CurSector.y;
+			sec->count++;
+
+			//↗
+			if (player->CurSector.y > 0)
+			{
+				sec->around[sec->count].x = player->CurSector.x + 1;
+				sec->around[sec->count].y = player->CurSector.y - 1;
+				sec->count++;
+			}
+			//↘
+			if (player->CurSector.y < SECTOR_MAX_Y - 1)
+			{
+				sec->around[sec->count].x = player->CurSector.x + 1;
+				sec->around[sec->count].y = player->CurSector.y + 1;
+				sec->count++;
+			}
+
+
+		}
+
+	}
+	//⭡
+	if (player->CurSector.y > 0)
+	{
+		sec->around[sec->count].x = player->CurSector.x;
+		sec->around[sec->count].y = player->CurSector.y - 1;
+		sec->count++;
+	}
+
+	//⭣
+	if (player->CurSector.y < SECTOR_MAX_Y - 1)
+	{
+		sec->around[sec->count].x = player->CurSector.x;
+		sec->around[sec->count].y = player->CurSector.y + 1;
+		sec->count++;
+	}
+
 }

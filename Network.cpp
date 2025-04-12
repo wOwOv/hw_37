@@ -8,7 +8,7 @@
 #include "System.h"
 #include <unordered_map>
 
-#define SERVERPORT 5000
+#define SERVERPORT 20000
 
 using namespace std;
 
@@ -253,8 +253,8 @@ void AcceptProc()
 		GetSectorAround(player->CurSector.x, player->CurSector.y, &sectoraround);
 		for (int i = 0; i < sectoraround.count; i++)
 		{
-			list<Player*>::iterator it = Sector[sectoraround.around[i].x][sectoraround.around[i].y].begin();
-			for (; it != Sector[sectoraround.around[i].x][sectoraround.around[i].y].end(); it++)
+			list<Player*>::iterator it = Sector[sectoraround.around[i].y][sectoraround.around[i].x].begin();
+			for (; it != Sector[sectoraround.around[i].y][sectoraround.around[i].x].end(); it++)
 			{
 				Player* exist = *it;
 				buf.Clear();
@@ -289,18 +289,17 @@ void AcceptProc()
 */
 
 
-
+		
 
 		//신규접속자 PlayerMap, SectorList,SessionMap에 넣기
 		PlayerMap.insert(make_pair(player->id, player));
 		SessionMap.insert(make_pair(player->id, player->session));
-		Sector[player->CurSector.x][player->CurSector.y].push_back(player);
+		Sector[player->CurSector.y][player->CurSector.x].push_back(player);
 
 		//기존접속자에게 신규접속자 생성메시지 send
 		buf.Clear();
 		mpSCCREATEOTHER(player->id, player->direction, player->x, player->y, player->hp, &buf);
-		SendAround(player->session, &buf, true);
-		//BProcCreateOther(player, player->id, player->direction, player->x, player->y, player->hp);
+		SendAround(player->session, &buf, false);
 
 	}
 }
@@ -455,206 +454,7 @@ void SendBroadcast(Player* player, SBuffer* buf)
 }
 */
 
-void Disconnect(Player* player)
-{
-	//list에서 삭제 예정 표시
-	player->remove = true;
 
-	//player 삭제 메시지 Broadcast
-	SBuffer buf;
-	mpSCDELETE(player->id, &buf);
-	SendAround(player->session, &buf, true);
-	//BProcDelete(player, player->id);
-
-}
-
-//데미지 입힐 player 찾고 damage패킷 보내기
-void AttackPlayer(Player* player, unsigned char type)
-{
-	if (player->remove == false)
-	{
-		switch (type)
-		{
-		case dfPACKET_CS_ATTACK1:
-		{
-			list<Player*>::iterator tgit = PlayerList.begin();
-			if (player->direction == dfPACKET_MOVE_DIR_LL)
-			{
-				for (; tgit != PlayerList.end(); tgit++)
-				{
-					if ((*tgit)->id != player->id && (*tgit)->remove == false)
-					{
-						Player* tgtply = *tgit;
-						if (tgtply->x <= player->x)
-						{
-							if ((player->x - tgtply->x) < dfATTACK1_RANGE_X && abs(player->y - tgtply->y) < dfATTACK1_RANGE_Y)
-							{
-								//hp처리 후 메시지 만들어 전체 send
-								tgtply->hp -= 1;
-								if (tgtply->hp <= 0)
-								{
-									Disconnect(tgtply);
-								}
-
-
-								RBProcDamage(player->id, tgtply->id, tgtply->hp);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-			else if (player->direction == dfPACKET_MOVE_DIR_RR)
-			{
-				for (; tgit != PlayerList.end(); tgit++)
-				{
-					if ((*tgit)->id != player->id && (*tgit)->remove == false)
-					{
-						Player* tgtply = *tgit;
-						if (tgtply->x >= player->x)
-						{
-							if ((tgtply->x - player->x) < dfATTACK1_RANGE_X && abs(tgtply->y - player->y) < dfATTACK1_RANGE_Y)
-							{
-								//hp처리 후 메시지 만들어 전체 send
-								tgtply->hp -= 1;
-
-								if (tgtply->hp <= 0)
-								{
-									Disconnect(tgtply);
-								}
-
-								RBProcDamage(player->id, tgtply->id, tgtply->hp);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-			break;
-		}
-		case dfPACKET_CS_ATTACK2:
-		{
-			list<Player*>::iterator tgit = PlayerList.begin();
-			if (player->direction == dfPACKET_MOVE_DIR_LL)
-			{
-				for (; tgit != PlayerList.end(); tgit++)
-				{
-					if ((*tgit)->id != player->id && (*tgit)->remove == false)
-					{
-						Player* tgtply = *tgit;
-						if (tgtply->x <= player->x)
-						{
-							if ((player->x - tgtply->x) < dfATTACK2_RANGE_X && abs(player->y - tgtply->y) < dfATTACK2_RANGE_Y)
-							{
-								//hp처리 후 메시지 만들어 전체 send
-								tgtply->hp -= 2;
-
-								if (tgtply->hp <= 0)
-								{
-									Disconnect(tgtply);
-								}
-
-								RBProcDamage(player->id, tgtply->id, tgtply->hp);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-			else if (player->direction == dfPACKET_MOVE_DIR_RR)
-			{
-				for (; tgit != PlayerList.end(); tgit++)
-				{
-					if ((*tgit)->id != player->id && (*tgit)->remove == false)
-					{
-						Player* tgtply = *tgit;
-						if (tgtply->x >= player->x)
-						{
-							if ((tgtply->x - player->x) < dfATTACK2_RANGE_X && abs(tgtply->y - player->y) < dfATTACK2_RANGE_Y)
-							{
-								//hp처리 후 메시지 만들어 전체 send
-								tgtply->hp -= 2;
-
-								if (tgtply->hp <= 0)
-								{
-									Disconnect(tgtply);
-								}
-
-								RBProcDamage( player->id, tgtply->id, tgtply->hp);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-			break;
-		}
-		case dfPACKET_CS_ATTACK3:
-		{
-			list<Player*>::iterator tgit = PlayerList.begin();
-			if (player->direction == dfPACKET_MOVE_DIR_LL)
-			{
-				for (; tgit != PlayerList.end(); tgit++)
-				{
-					if ((*tgit)->id != player->id && (*tgit)->remove == false)
-					{
-						Player* tgtply = *tgit;
-						if (tgtply->x <= player->x)
-						{
-							if ((player->x - tgtply->x) < dfATTACK3_RANGE_X && abs(player->y - tgtply->y) < dfATTACK3_RANGE_Y)
-							{
-								//hp처리 후 메시지 만들어 전체 send
-								tgtply->hp -= 3;
-
-								if (tgtply->hp <= 0)
-								{
-									Disconnect(tgtply);
-								}
-
-								RBProcDamage( player->id, tgtply->id, tgtply->hp);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-			else if (player->direction == dfPACKET_MOVE_DIR_RR)
-			{
-				for (; tgit != PlayerList.end(); tgit++)
-				{
-					if ((*tgit)->id != player->id && (*tgit)->remove == false)
-					{
-						Player* tgtply = *tgit;
-						if (tgtply->x >= player->x)
-						{
-							if ((tgtply->x - player->x) < dfATTACK3_RANGE_X && abs(tgtply->y - player->y) < dfATTACK3_RANGE_Y)
-							{
-								//hp처리 후 메시지 만들어 전체 send
-								tgtply->hp -= 3;
-
-								if (tgtply->hp <= 0)
-								{
-									Disconnect(tgtply);
-								}
-
-								RBProcDamage(player->id, tgtply->id, tgtply->hp);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-			break;
-		}
-		}
-	}
-}
 
 extern std::list<Player*> Sector[SECTOR_MAX_Y][SECTOR_MAX_X];
 extern std::unordered_map<unsigned int, Player*> PlayerMap;
@@ -704,43 +504,34 @@ void SendAround(Session* session, SBuffer* buf, bool me)
 		std::list<Player*>::iterator it = Sector[sectoraround.around[i].y][sectoraround.around[i].x].begin();
 		for (; it != Sector[sectoraround.around[i].y][sectoraround.around[i].x].end(); it++)
 		{
-			Player* player = *it;
-			int size = buf->GetDataSize();
-			int enqret = player->session->SendQ.Enqueue(buf->GetBufferPtr(), size);
-			if (enqret != size)
+			//날 제외하지 않는다면
+			if (me != false)
 			{
-				Disconnect(player);
-			}
-		}
-	}
-	std::list<Player*>::iterator it = Sector[sectoraround.around[sectoraround.count - 1].y][sectoraround.around[sectoraround.count - 1].x].begin();
-	for (; it != Sector[sectoraround.around[sectoraround.count - 1].y][sectoraround.around[sectoraround.count - 1].x].end(); it++)
-	{
-		//날 제외하지 않는다면
-		if (me !=false)
-		{
-			Player* player = *it;
-			int size = buf->GetDataSize();
-			int enqret = player->session->SendQ.Enqueue(buf->GetBufferPtr(), size);
-			if (enqret != size)
-			{
-				Disconnect(player);
-			}
-		}
-		else
-		{
-			Player* player = *it;
-			if (player->session != session)
-			{
+				Player* tgtplayer = *it;
 				int size = buf->GetDataSize();
-				int enqret = player->session->SendQ.Enqueue(buf->GetBufferPtr(), size);
+				int enqret = tgtplayer->session->SendQ.Enqueue(buf->GetBufferPtr(), size);
 				if (enqret != size)
 				{
 					Disconnect(player);
 				}
 			}
+			else
+			{
+				Player* tgtplayer = *it;
+				if (tgtplayer->session != session)
+				{
+					int size = buf->GetDataSize();
+					int enqret = tgtplayer->session->SendQ.Enqueue(buf->GetBufferPtr(), size);
+					if (enqret != size)
+					{
+						Disconnect(player);
+					}
+				}
+			}
 		}
+		
 	}
+	
 }
 
 //섹터리스트 받아서 섹터리스트에 들어있는 섹터들에 보내기

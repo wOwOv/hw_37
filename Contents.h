@@ -5,23 +5,12 @@
 #define dfPACKET_CODE		0x89
 
 
-
-//-----------------------------------------------------------------
-// 화면 이동영역
-//-----------------------------------------------------------------
-#define dfRANGE_MOVE_TOP	50
-#define dfRANGE_MOVE_LEFT	10
-#define dfRANGE_MOVE_RIGHT	630
-#define dfRANGE_MOVE_BOTTOM	470
-
-
-
 //-----------------------------------------------------------------
 // 30초 이상이 되도록 아무런 메시지 수신도 없는경우 접속 끊음.
 //-----------------------------------------------------------------
 #define dfNETWORK_PACKET_RECV_TIMEOUT	30000
 
-/*
+
 //-----------------------------------------------------------------
 // 화면 이동 범위.
 //-----------------------------------------------------------------
@@ -29,7 +18,7 @@
 #define dfRANGE_MOVE_LEFT	0
 #define dfRANGE_MOVE_RIGHT	6400
 #define dfRANGE_MOVE_BOTTOM	6400
-*/
+
 
 //---------------------------------------------------------------
 // 공격범위.
@@ -62,11 +51,11 @@
 //-----------------------------------------------------------------
 #define dfERROR_RANGE		50
 
-#define SECTOR_HEIGHT		320
-#define SECTOR_WIDTH		200
+#define SECTOR_HEIGHT		160
+#define SECTOR_WIDTH		160
 
-#define SECTOR_MAX_Y		20
-#define SECTOR_MAX_X		32
+#define SECTOR_MAX_Y		6400/SECTOR_HEIGHT
+#define SECTOR_MAX_X		6400/SECTOR_WIDTH
 
 struct SectorAround;
 struct Session;
@@ -102,5 +91,9 @@ struct Player
 
 void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround);
 void GetUpdateSectorAround(Player* player, SectorAround* RemoveSec, SectorAround* AddSec);
+void GetAttackSectorAround(Player* player, SectorAround* sec);
+
+void AttackPlayer(Player* player, unsigned char type);
+void Disconnect(Player* player);
 
 #endif

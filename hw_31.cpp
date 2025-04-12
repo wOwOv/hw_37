@@ -24,44 +24,11 @@
 
 #define BUF 2048
 
-//-----------------------------------------------------------------
-// 화면 이동영역
-//-----------------------------------------------------------------
-#define dfRANGE_MOVE_TOP	50
-#define dfRANGE_MOVE_LEFT	10
-#define dfRANGE_MOVE_RIGHT	630
-#define dfRANGE_MOVE_BOTTOM	470
-
-//-----------------------------------------------------------------
-// 이동 오류체크 범위
-//-----------------------------------------------------------------
-#define dfERROR_RANGE		50
-
-//---------------------------------------------------------------
-// 공격범위.
-//---------------------------------------------------------------
-#define dfATTACK1_RANGE_X		80
-#define dfATTACK2_RANGE_X		90
-#define dfATTACK3_RANGE_X		100
-#define dfATTACK1_RANGE_Y		10
-#define dfATTACK2_RANGE_Y		10
-#define dfATTACK3_RANGE_Y		20
 
 using namespace std;
 
-void NetworkSelect();
-
-void AcceptProc();
-void RecvProc(Player* player);
-void SendProc(Player* player);
-
-void SendUnicast(Player* player, SBuffer* buf);
-void SendBroadcast(Player* player, SBuffer* buf);
-void Disconnect(Player* player);
-
 
 void Update(WORD T);
-void AttackPlayer(Player* player, unsigned char type);
 
 bool FrameControl();
 
@@ -106,9 +73,10 @@ int main()
 				//Sessionmap에서 지우기
 				SessionMap.erase(tgtply->id);
 				//Sector리스트에서 지우기
-				for (list<Player*>::iterator it = Sector[tgtply->CurSector.y][tgtply->CurSector.x].begin(); it != Sector[tgtply->CurSector.y][tgtply->CurSector.x].end(); it++)
+				list<Player*>::iterator it = Sector[tgtply->CurSector.y][tgtply->CurSector.x].begin();
+				for (; it != Sector[tgtply->CurSector.y][tgtply->CurSector.x].end(); it++)
 				{
-					if (*it = tgtply)
+					if (*it == tgtply)
 					{
 						Sector[tgtply->CurSector.y][tgtply->CurSector.x].erase(it);
 						break;
@@ -165,10 +133,10 @@ int main()
 void Update(WORD T)
 {
 		//움직임 로직처리
-		list<Player*>::iterator moveit = PlayerList.begin();
-		for (; moveit != PlayerList.end(); moveit++)
+	unordered_map<unsigned int, Player*>::iterator moveit = PlayerMap.begin();
+		for (; moveit != PlayerMap.end(); moveit++)
 		{
-			Player* player = *moveit;
+			Player* player = moveit->second;
 			if (player->move != -1)
 			{
 				switch (player->move)
@@ -263,8 +231,54 @@ void Update(WORD T)
 				}
 				}
 
-				printf("move id: %d dir: %d x: %d y: %d\n", player->id, player->direction, player->x, player->y);
+				_LOG(LOG_LEVEL_DEBUG,L"Move id: %d dir: %d x: %d y: %d\n", player->id, player->direction, player->x, player->y);
 			}
+
+			//sector 계산
+			player->OldSector.x = player->CurSector.x;
+			player->OldSector.y = player->CurSector.y;
+
+			player->CurSector.x = player->x / SECTOR_WIDTH;
+			player->CurSector.y = player->y / SECTOR_HEIGHT;
+
+			//sector변화가 있다면
+			if (player->OldSector.x != player->CurSector.x || player->OldSector.y != player->CurSector.y)
+			{
+				//섹터옮기기
+				list<Player*>::iterator it = Sector[player->OldSector.y][player->OldSector.x].begin();
+				for (; it != Sector[player->OldSector.y][player->OldSector.x].end(); it++)
+				{
+					Player* tgt = *it;
+					if (tgt->id == player->id)
+					{
+						Sector[player->OldSector.y][player->OldSector.x].erase(it);
+						break;
+					}
+				}
+
+				Sector[player->CurSector.y][player->CurSector.x].push_back(player);
+
+
+
+				SectorAround removesec;
+				SectorAround addsec;
+				GetUpdateSectorAround(player, &removesec, &addsec);
+
+				//제거해야할 sector들에 delete메시지 보내기
+				SBuffer buf;
+				mpSCDELETE(player->id, &buf);
+				SendSectorList(&removesec, &buf, false);
+
+				//추가해야할 sector들에 create메시지 보내기
+				buf.Clear();
+				mpSCCREATEOTHER(player->id, player->direction, player->x, player->y, player->hp, &buf);
+				SendSectorList(&addsec, &buf, false);
+				//움직이고 있다면 movestart메시지 까지 보내주기
+				buf.Clear();
+				mpSCMOVESTART(player->id, player->move, player->x, player->y, &buf);
+				SendSectorList(&addsec, &buf, false);
+			}
+
 		}
 }
 
