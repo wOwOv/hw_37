@@ -1,24 +1,42 @@
-#include "Contents.h"
+ï»¿
+#include "Network.h"
 #include "SerialBuffer.h"
-#include "Protocol.h"
-#include "System.h"
-#include "SerialBuffer.h"
-#include <stdlib.h>
 
-bool PacketProc_MoveStart(Player* player, SBuffer* buf)
+#include "Messagestub.h"
+#include "Messageproxy.h"
+#include "Protocol.h"
+#include "Contents.h"
+#include "System.h"
+#include <iostream>
+#include <list>
+#include <unordered_map>
+
+
+std::list<Player*> Sector[SECTOR_MAX_Y][SECTOR_MAX_X];
+std::unordered_map<unsigned int, Player*> PlayerMap;
+
+
+bool ProcCreateMe(Player* player, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp) { return true; }
+bool ProcCreateOther(Player* player, unsigned char dir, unsigned short x, unsigned short y, unsigned char hp) { return true; }
+bool ProcDelete(Player* player) { return true; }
+
+
+bool ProcMoveStart(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#MOVESTART# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
+
 	}
-	else
-	{
-		//player ¿òÁ÷ÀÓ Á¤º¸ º¯°æ
+		//player ì›€ì§ìž„ ì •ë³´ ë³€ê²½
 		switch (dir)
 		{
 		case dfPACKET_MOVE_DIR_LL:
@@ -36,37 +54,33 @@ bool PacketProc_MoveStart(Player* player, SBuffer* buf)
 		player->x = x;
 		player->y = y;
 
-		_LOG(LOG_LEVEL_DEBUG,L"Recv CSMOVESTART id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
+		
+		
+		//í•´ë‹¹ í”Œë ˆì´ì–´ì— ëŒ€í•œ ì›€ì§ìž„ ì •ë³´ ë³¸ì¸ ì œì™¸ ê·¼ì²˜sectorì— send
+		buf.Clear();
+		mpSCMOVESTART(player->id, player->move, player->x, player->y, &buf);
+		SendAround(player->session, &buf, false);
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î¿¡ ´ëÇÑ ¿òÁ÷ÀÓ Á¤º¸ º»ÀÎ Á¦¿Ü ÀüÃ¼¿¡°Ô send
-		buf->Clear();
-		mpSCMOVESTART(player->id, player->move, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir;
-		unsigned short mx;
-		unsigned short my;
-		*buf >> mid >> mdir >> mx >> my;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast SCMOVESTART id:%d direction:%d x:%d y:%d \n", mid, mdir, mx, my);
-	}
 	return true;
 }
-bool PacketProc_MoveStop(Player* player, SBuffer* buf)
+
+
+bool ProcMoveStop(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#MOVESTOP# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//player ¿òÁ÷ÀÓ Á¤º¸ º¯°æ
+	
+		//player ì›€ì§ìž„ ì •ë³´ ë³€ê²½
 		switch (dir)
 		{
 		case dfPACKET_MOVE_DIR_LL:
@@ -84,156 +98,1192 @@ bool PacketProc_MoveStop(Player* player, SBuffer* buf)
 		player->x = x;
 		player->y = y;
 
-		_LOG(LOG_LEVEL_DEBUG, L"Recv CSMOVESTOP id:%d direction:%d x:%d y:%d \n", player->id, dir, x, y);
+		//sector ê³„ì‚°
+		player->OldSector.x = player->CurSector.x;
+		player->OldSector.y = player->CurSector.y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î¿¡ ´ëÇÑ ¿òÁ÷ÀÓ Á¤º¸ º»ÀÎ Á¦¿Ü ÀüÃ¼¿¡°Ô send
-		buf->Clear();
-		mpSCMOVESTOP(player->id, dir, player->x, player->y, buf);
+		player->CurSector.x = player->x / SECTOR_WIDTH;
+		player->CurSector.y = player->y / SECTOR_HEIGHT;
 
-		SendBroadcast(player, buf);
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir;
-		unsigned short mx;
-		unsigned short my;
-		*buf >> mid >> mdir >> mx >> my;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast SCMOVESTOP id:%d direction:%d x:%d y:%d \n", mid, mdir, mx, my);
-	}
+		//sectorë³€í™”ê°€ ìžˆë‹¤ë©´
+		if (player->OldSector.x != player->CurSector.x || player->OldSector.y != player->CurSector.y)
+		{
+			//ì„¹í„°ì˜®ê¸°ê¸°
+			std::list<Player*>::iterator it = Sector[player->OldSector.y][player->OldSector.x].begin();
+			for (; it != Sector[player->OldSector.y][player->OldSector.x].end(); it++)
+			{
+				Player* tgt = *it;
+				if (tgt->id == player->id)
+				{
+					Sector[player->OldSector.y][player->OldSector.x].erase(it);
+					break;
+				}
+			}
+
+			Sector[player->CurSector.y][player->CurSector.x].push_back(player);
+
+
+
+			SectorAround removesec;
+			SectorAround addsec;
+			GetUpdateSectorAround(player, &removesec, &addsec);
+
+			//ì œê±°í•´ì•¼í•  sectorë“¤ì— deleteë©”ì‹œì§€ ë³´ë‚´ê¸°
+			SBuffer buf;
+			mpSCDELETE(player->id, &buf);
+			SendSectorList(player->session,&removesec, &buf, false);
+
+			//ì¶”ê°€í•´ì•¼í•  sectorë“¤ì— createë©”ì‹œì§€ ë³´ë‚´ê¸°
+			buf.Clear();
+			mpSCCREATEOTHER(player->id, player->direction, player->x, player->y, player->hp, &buf);
+			SendSectorList(player->session,&addsec, &buf, false);
+			//movestopë©”ì‹œì§€ ê¹Œì§€ ë³´ë‚´ì£¼ê¸°
+			buf.Clear();
+			mpSCMOVESTOP(player->id, player->direction, player->x, player->y, &buf);
+			SendSectorList(player->session,&addsec, &buf, false);
+		}
+
+
+		//í•´ë‹¹ í”Œë ˆì´ì–´ì— ëŒ€í•œ ì›€ì§ìž„ ì •ë³´ ë³¸ì¸ ì œì™¸ ì „ì²´ì—ê²Œ send
+		buf.Clear();
+		mpSCMOVESTOP(player->id, dir, player->x, player->y, &buf);
+		SendAround(player->session, &buf, false);
+		//BProcMoveStop(player, player->id, dir, player->x, player->y);
+
+	
 	return true;
 }
 
-bool PacketProc_Attack1(Player* player, SBuffer* buf)
+bool ProcAttack1(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#ATTACK1# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ Ã³¸®
+
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ ì²˜ë¦¬
 		player->direction = dir;
 		player->x = x;
 		player->y = y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ send()
-		buf->Clear();
+		//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ send()
+		buf.Clear();
+		mpSCATTACK1(player->id, player->direction, player->x, player->y, &buf);
+		SendAround(player->session, &buf, false);
+		//BProcAttack1(player, player->id, player->direction, player->x, player->y);
 
-		mpSCATTACK1(player->id, player->direction, player->x, player->y, buf);
-
-		SendBroadcast(player, buf);
-
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack1 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
-
-		//µ¥¹ÌÁöÃ³¸®
+		//ë°ë¯¸ì§€ì²˜ë¦¬
 		AttackPlayer(player, dfPACKET_CS_ATTACK1);
 
-	}
+
 	return true;
 }
-bool PacketProc_Attack2(Player* player, SBuffer* buf)
+
+bool ProcAttack2(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#ATTACK2# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ Ã³¸®
-		player->direction = dir;
-		player->x = x;
-		player->y = y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ send()
-		buf->Clear();
+	//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ ì²˜ë¦¬
+	player->direction = dir;
+	player->x = x;
+	player->y = y;
 
-		mpSCATTACK2(player->id, player->direction, player->x, player->y, buf);
+	//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ send()
+	buf.Clear();
+	mpSCATTACK2(player->id, player->direction, player->x, player->y, &buf);
+	SendAround(player->session, &buf, false);
 
-		SendBroadcast(player, buf);
+	//ë°ë¯¸ì§€ì²˜ë¦¬
+	AttackPlayer(player, dfPACKET_CS_ATTACK2);
 
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack2 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
 
-		//µ¥¹ÌÁöÃ³¸®
-		AttackPlayer(player, dfPACKET_CS_ATTACK2);
-
-	}
 	return true;
 }
-bool PacketProc_Attack3(Player* player, SBuffer* buf)
+
+bool ProcAttack3(Player* player, unsigned char dir, unsigned short x, unsigned short y)
 {
-	unsigned char dir;
-	unsigned short x;
-	unsigned short y;
-	*buf >> dir >> x >> y;
+	_LOG(LOG_LEVEL_DEBUG, L"#ATTACK3# id:%d / direction:%d / x:%d / y:%d \n", player->id, dir, x, y);
+
+	SBuffer buf;
 
 	if (abs(player->x - x) > dfERROR_RANGE || abs(player->y - y) > dfERROR_RANGE)
 	{
-		Disconnect(player);
+		mpSCSYNC(player->id, player->x, player->y, &buf);
+		SendAround(player->session, &buf, true);
+
+		x = player->x;
+		y = player->y;
 	}
-	else
-	{
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ Ã³¸®
-		player->direction = dir;
-		player->x = x;
-		player->y = y;
 
-		//ÇØ´ç ÇÃ·¹ÀÌ¾î °ø°Ý Á¤º¸ send()
-		buf->Clear();
+	//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ ì²˜ë¦¬
+	player->direction = dir;
+	player->x = x;
+	player->y = y;
 
-		mpSCATTACK3(player->id, player->direction, player->x, player->y, buf);
+	//í•´ë‹¹ í”Œë ˆì´ì–´ ê³µê²© ì •ë³´ send()
+	buf.Clear();
+	mpSCATTACK3(player->id, player->direction, player->x, player->y, &buf);
+	SendAround(player->session, &buf, false);
 
-		SendBroadcast(player, buf);
 
-		buf->MoveReadPos(sizeof(HEADER));
-		unsigned int mid = 0;
-		unsigned char mdir = 0;
-		unsigned short mx = 0;
-		unsigned short my = 0;
-		_LOG(LOG_LEVEL_DEBUG, L"broadcast attack1 id: %d direction: %d x: %d y: %d\n", mid, mdir, mx, my);
+	//ë°ë¯¸ì§€ì²˜ë¦¬
+	AttackPlayer(player, dfPACKET_CS_ATTACK3);
 
-		//µ¥¹ÌÁöÃ³¸®
-		AttackPlayer(player, dfPACKET_CS_ATTACK3);
 
-	}
 	return true;
 }
+
+//ë°ë¯¸ì§€ ìž…íž player ì°¾ê³  damageíŒ¨í‚· ë³´ë‚´ê¸°
+void AttackPlayer(Player* player, unsigned char type)
+{
+	if (player->remove == false)
+	{
+		SectorAround sec;
+		GetAttackSectorAround(player, &sec);
+		SBuffer buf;
+		switch (type)
+		{
+		case dfPACKET_CS_ATTACK1:
+		{
+			if (player->direction == dfPACKET_MOVE_DIR_LL)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].end(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x < player->x)
+							{
+								if ((player->x - tgtply->x) <= dfATTACK1_RANGE_X && abs(player->y - tgtply->y) <= dfATTACK1_RANGE_Y)
+								{
+									//hpì²˜ë¦¬ í›„ ë©”ì‹œì§€ ë§Œë“¤ì–´ ì „ì²´ send
+									tgtply->hp -= dfATTACK1_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										_LOG(LOG_LEVEL_DEBUG, L"********HP Disconnect Id: %d\n", tgtply->id);
+										Disconnect(tgtply);
+										return;
+									}
+									else {
+										buf.Clear();
+										mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+										//ë§žëŠ” playerê·¼ì²˜ sectorì— send
+										SendAround(tgtply->session, &buf, true);
+
+										return;
+									}
+								}
+							}
+						}
+					}
+
+				}
+			}
+			if (player->direction == dfPACKET_MOVE_DIR_RR)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].end(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x > player->x)
+							{
+								if ((player->x - tgtply->x) <= dfATTACK1_RANGE_X && abs(player->y - tgtply->y) <= dfATTACK1_RANGE_Y)
+								{
+									//hpì²˜ë¦¬ í›„ ë©”ì‹œì§€ ë§Œë“¤ì–´ ì „ì²´ send
+									tgtply->hp -= dfATTACK1_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										_LOG(LOG_LEVEL_DEBUG, L"********HP Disconnect Id: %d\n", tgtply->id);
+										Disconnect(tgtply);
+										return;
+									}
+									else
+									{
+										buf.Clear();
+										mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+										//ë§žëŠ” target playerê·¼ì²˜ sectorì— send
+										SendAround(tgtply->session, &buf, true);
+
+										return;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		case dfPACKET_CS_ATTACK2:
+		{
+			if (player->direction == dfPACKET_MOVE_DIR_LL)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].end(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x < player->x)
+							{
+								if ((player->x - tgtply->x) <= dfATTACK2_RANGE_X && abs(player->y - tgtply->y) <= dfATTACK2_RANGE_Y)
+								{
+									//hpì²˜ë¦¬ í›„ ë©”ì‹œì§€ ë§Œë“¤ì–´ ì „ì²´ send
+									tgtply->hp -= dfATTACK2_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										_LOG(LOG_LEVEL_DEBUG, L"********HP Disconnect Id: %d\n", tgtply->id);
+										Disconnect(tgtply);
+										return;
+									}
+									else
+									{
+										buf.Clear();
+										mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+										//ë§žëŠ” playerê·¼ì²˜ sectorì— send
+										SendAround(tgtply->session, &buf, true);
+
+										return;
+									}
+								}
+							}
+						}
+					}
+
+				}
+			}
+			if (player->direction == dfPACKET_MOVE_DIR_RR)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].end(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x > player->x)
+							{
+								if ((player->x - tgtply->x) <= dfATTACK2_RANGE_X && abs(player->y - tgtply->y) <= dfATTACK2_RANGE_Y)
+								{
+									//hpì²˜ë¦¬ í›„ ë©”ì‹œì§€ ë§Œë“¤ì–´ ì „ì²´ send
+									tgtply->hp -= dfATTACK2_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										_LOG(LOG_LEVEL_DEBUG, L"********HP Disconnect Id: %d\n", tgtply->id);
+										Disconnect(tgtply);
+										return;
+									}
+									else
+									{
+										buf.Clear();
+										mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+										//ë§žëŠ” target playerê·¼ì²˜ sectorì— send
+										SendAround(tgtply->session, &buf, true);
+
+										return;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		case dfPACKET_CS_ATTACK3:
+		{
+			if (player->direction == dfPACKET_MOVE_DIR_LL)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].end(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x < player->x)
+							{
+								if ((player->x - tgtply->x) <= dfATTACK3_RANGE_X && abs(player->y - tgtply->y) <= dfATTACK3_RANGE_Y)
+								{
+									//hpì²˜ë¦¬ í›„ ë©”ì‹œì§€ ë§Œë“¤ì–´ ì „ì²´ send
+									tgtply->hp -= dfATTACK3_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										_LOG(LOG_LEVEL_DEBUG, L"********HP Disconnect Id: %d\n", tgtply->id);
+										Disconnect(tgtply);
+										return;
+									}
+									else
+									{
+										buf.Clear();
+										mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+										//ë§žëŠ” playerê·¼ì²˜ sectorì— send
+										SendAround(tgtply->session, &buf, true);
+
+										return;
+									}
+								}
+							}
+						}
+					}
+
+				}
+			}
+			if (player->direction == dfPACKET_MOVE_DIR_RR)
+			{
+				for (int i = 0; i < sec.count; i++)
+				{
+					std::list<Player*>::iterator tgtit = Sector[sec.around[i].y][sec.around[i].x].begin();
+					for (; tgtit != Sector[sec.around[i].y][sec.around[i].x].end(); tgtit++)
+					{
+						Player* tgtply = *tgtit;
+						if (tgtply->id != player->id && tgtply->remove == false)
+						{
+							if (tgtply->x > player->x)
+							{
+								if ((player->x - tgtply->x) <= dfATTACK3_RANGE_X && abs(player->y - tgtply->y) <= dfATTACK3_RANGE_Y)
+								{
+									//hpì²˜ë¦¬ í›„ ë©”ì‹œì§€ ë§Œë“¤ì–´ ì „ì²´ send
+									tgtply->hp -= dfATTACK3_DAMAGE;
+									if (tgtply->hp <= 0)
+									{
+										_LOG(LOG_LEVEL_DEBUG, L"********HP Disconnect Id: %d\n", tgtply->id);
+										Disconnect(tgtply);
+										return;
+									}
+									else
+									{
+										buf.Clear();
+										mpSCDAMAGE(player->id, tgtply->id, tgtply->hp, &buf);
+
+										//ë§žëŠ” target playerê·¼ì²˜ sectorì— send
+										SendAround(tgtply->session, &buf, true);
+
+										return;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		}
+	}
+}
+
+
+bool ProcDamage(Player* player, unsigned int tgt, unsigned char hp) { return true; }
+
+bool ProcEcho(Player* player, unsigned long time)
+{
+	SBuffer buf;
+	mpSCECHO(time, &buf);
+	SendUnicast(player->session, &buf);
+
+	return true;
+}
+
 
 void Disconnect(Player* player)
 {
-	//list¿¡¼­ »èÁ¦ ¿¹Á¤ Ç¥½Ã
+	//listì—ì„œ ì‚­ì œ ì˜ˆì • í‘œì‹œ
 	player->remove = true;
 
-	//player »èÁ¦ ¸Þ½ÃÁö Broadcast
+	//player ì‚­ì œ ë©”ì‹œì§€ Broadcast
 	SBuffer buf;
 	mpSCDELETE(player->id, &buf);
+	SendAround(player->session, &buf, true);
+	//BProcDelete(player, player->id);
 
-	SendBroadcast(player, &buf);
 }
 
-//Æ¯Á¤ ¼½ÅÍ 1°³¿¡ º¸³»±â
-void SendSectorOne(int SectorX, int SectorY, SBuffer* buf,Session* session){}
-//Æ¯Á¤ 1¸íÀÇ Å¬¶ó¿¡ º¸³»±â
-void SendUnicast(Session* session, SBuffer* buf, bool me = false) {}
-//Å¬¶ó ±âÁØ ÁÖº¯ ¼½ÅÍ¿¡ º¸³»±â
-void SendAround(Session* session, SBuffer* buf) {}
-//ÁøÂ¥ ºê·ÎµåÄ³½ºÆÃ
-void SendBroadcast(Session* session, SBuffer* buf) {}
+
+
+void GetSectorAround(int SectorX, int SectorY, SectorAround* sectoraround)
+{
+	sectoraround->count = 0;
+	if (SectorX > 0)
+	{
+		//â†–
+		if (SectorY > 0)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX - 1;
+			sectoraround->around[sectoraround->count].y = SectorY - 1;
+			sectoraround->count++;
+		}
+		
+		//â†™
+		if (SectorY < SECTOR_MAX_Y - 1)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX - 1;
+			sectoraround->around[sectoraround->count].y = SectorY + 1;
+			sectoraround->count++;
+		}
+
+		//â­ 
+		sectoraround->around[sectoraround->count].x = SectorX - 1;
+		sectoraround->around[sectoraround->count].y = SectorY;
+		sectoraround->count++;
+	}
+
+	//â­¡
+	if (SectorY > 0)
+	{
+		sectoraround->around[sectoraround->count].x = SectorX;
+		sectoraround->around[sectoraround->count].y = SectorY - 1;
+		sectoraround->count++;
+	}
+	//â­£
+	if (SectorY < SECTOR_MAX_Y - 1)
+	{
+		sectoraround->around[sectoraround->count].x = SectorX;
+		sectoraround->around[sectoraround->count].y = SectorY + 1;
+		sectoraround->count++;
+	}
+
+	if (SectorX < SECTOR_MAX_X - 1)
+	{
+		//â†—
+		if (SectorY > 0)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX + 1;
+			sectoraround->around[sectoraround->count].y = SectorY - 1;
+			sectoraround->count++;
+		}
+
+		//â†˜
+		if (SectorY < SECTOR_MAX_Y - 1)
+		{
+			sectoraround->around[sectoraround->count].x = SectorX + 1;
+			sectoraround->around[sectoraround->count].y = SectorY + 1;
+			sectoraround->count++;
+		}
+		
+		//â­¢
+		sectoraround->around[sectoraround->count].x = SectorX + 1;
+		sectoraround->around[sectoraround->count].y = SectorY;
+		sectoraround->count++;
+	}
+
+	//ë³¸ì¸ì´ ìžˆëŠ” ì„¹í„°
+	sectoraround->around[sectoraround->count].x = SectorX;
+	sectoraround->around[sectoraround->count].y = SectorY;
+	sectoraround->count++;
+
+
+}
+
+void GetUpdateSectorAround(Player* player, SectorAround* RemoveSec, SectorAround* AddSec)
+{
+	if (player->CurSector.x < player->OldSector.x)
+	{
+		//ì´ë™ë°©í–¥ â†–
+		if (player->CurSector.y < player->OldSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+
+				//â†˜
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­¢
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+			//â­£
+			if (player->OldSector.y < SECTOR_MAX_Y - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+
+			//â†™
+			if (player->OldSector.x > 0)
+			{
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x > 0)
+			{
+				//â†–
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†™
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­ 
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+
+			//â­¡
+			if (player->CurSector.y > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+
+			//â†—
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+			}
+
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â†™
+		if (player->CurSector.y > player->OldSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+
+				//â†˜
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­¢
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+			//â­¡
+			if (player->OldSector.y > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+
+			//â†–
+			if (player->OldSector.x > 0)
+			{
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x > 0)
+			{
+				//â†–
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†™
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­ 
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+
+			//â­£
+			if (player->CurSector.y < SECTOR_MAX_Y - 1)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+				AddSec->count++;
+			}
+
+			//â†˜
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+			}
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â­ 
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†˜
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+				//â­¢
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x > 0)
+			{
+				//â†–
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†™
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+				//â­ 
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+
+			}
+			return;
+		}
+
+	}
+	//ì´ë™ë°©í–¥ â­¡
+	if (player->CurSector.y < player->OldSector.y)
+	{
+		RemoveSec->count = 0;
+		if (player->OldSector.y < SECTOR_MAX_Y - 1)
+		{
+			//â†™
+			if (player->OldSector.x > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+			//â†˜
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+			//â­£
+			RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+			RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+			RemoveSec->count++;
+
+		}
+
+		AddSec->count = 0;
+		if (player->CurSector.y > 0)
+		{
+			//â†–
+			if (player->CurSector.x > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+			//â†—
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+			//â­¡
+			AddSec->around[AddSec->count].x = player->CurSector.x;
+			AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+			AddSec->count++;
+
+		}
+		return;
+	}
+
+	//ì´ë™ë°©í–¥ â­£
+	if (player->CurSector.y > player->OldSector.y)
+	{
+		RemoveSec->count = 0;
+		if (player->OldSector.y > 0)
+		{
+			//â†–
+			if (player->OldSector.x > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+			//â†—
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+			//â­¡
+			RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+			RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+			RemoveSec->count++;
+
+		}
+
+		AddSec->count = 0;
+		if (player->CurSector.y < SECTOR_MAX_Y - 1)
+		{
+			//â†™
+			if (player->CurSector.x > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+				AddSec->count++;
+			}
+			//â†˜
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				AddSec->around[AddSec->count].x = player->OldSector.x + 1;
+				AddSec->around[AddSec->count].y = player->OldSector.y + 1;
+				AddSec->count++;
+			}
+			//â­£
+			AddSec->around[AddSec->count].x = player->CurSector.x;
+			AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+			AddSec->count++;
+
+		}
+		return;
+	}
+
+
+	if (player->CurSector.x > player->OldSector.x)
+	{
+		//ì´ë™ë°©í–¥ â†—
+		if (player->CurSector.y < player->CurSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x > 0)
+			{
+				//â†–
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†™
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­ 
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+
+			//â­£
+			if (player->OldSector.y < SECTOR_MAX_Y - 1)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+				RemoveSec->count++;
+			}
+
+			//â†˜
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+
+				//â†˜
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­¢
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+			//â­¡
+			if (player->CurSector.y > 0)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+				AddSec->count++;
+			}
+
+			//â†–
+			if (player->CurSector.x > 0)
+			{
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+			}
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â†˜
+		if (player->CurSector.y > player->OldSector.y)
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x > 0)
+			{
+				//â†–
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†™
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+
+				//â­ 
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+
+			//â­¡
+			if (player->OldSector.y > 0)
+			{
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+				RemoveSec->count++;
+			}
+
+			//â†—
+			if (player->OldSector.x < SECTOR_MAX_X - 1)
+			{
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x + 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+
+				//â†˜
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+
+				//â­¢
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+			}
+			//â­£
+			if (player->CurSector.y < SECTOR_MAX_Y - 1)
+			{
+				AddSec->around[AddSec->count].x = player->CurSector.x;
+				AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+				AddSec->count++;
+			}
+
+			//â†™
+			if (player->CurSector.x > 0)
+			{
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x - 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+			}
+
+
+			return;
+		}
+
+
+		//ì´ë™ë°©í–¥ â­¢
+		{
+			RemoveSec->count = 0;
+			if (player->OldSector.x > 0)
+			{
+				//â†–
+				if (player->OldSector.y > 0)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y - 1;
+					RemoveSec->count++;
+				}
+				//â†™
+				if (player->OldSector.y < SECTOR_MAX_Y - 1)
+				{
+					RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+					RemoveSec->around[RemoveSec->count].y = player->OldSector.y + 1;
+					RemoveSec->count++;
+				}
+				//â­ 
+				RemoveSec->around[RemoveSec->count].x = player->OldSector.x - 1;
+				RemoveSec->around[RemoveSec->count].y = player->OldSector.y;
+				RemoveSec->count++;
+			}
+
+			AddSec->count = 0;
+			if (player->CurSector.x < SECTOR_MAX_X - 1)
+			{
+				//â†—
+				if (player->CurSector.y > 0)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y - 1;
+					AddSec->count++;
+				}
+				//â†˜
+				if (player->CurSector.y < SECTOR_MAX_Y - 1)
+				{
+					AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+					AddSec->around[AddSec->count].y = player->CurSector.y + 1;
+					AddSec->count++;
+				}
+				//â­¢
+				AddSec->around[AddSec->count].x = player->CurSector.x + 1;
+				AddSec->around[AddSec->count].y = player->CurSector.y;
+				AddSec->count++;
+
+			}
+
+
+			return;
+		}
+
+	}
+}
+
+void GetAttackSectorAround(Player* player, SectorAround* sec)
+{
+		sec->count = 0;
+		//ìžê¸°ê°€ ì†í•œ ì„¹í„°
+		sec->around[sec->count].x = player->CurSector.x;
+		sec->around[sec->count].y = player->CurSector.y;
+		sec->count++;
+
+		
+
+	if (player->direction == dfPACKET_MOVE_DIR_LL)
+	{
+		if (player->CurSector.x > 0)
+		{
+			//â­ 
+			sec->around[sec->count].x = player->CurSector.x - 1;
+			sec->around[sec->count].y = player->CurSector.y;
+			sec->count++;
+
+			//â†–
+			if (player->CurSector.y > 0)
+			{
+				sec->around[sec->count].x = player->CurSector.x - 1;
+				sec->around[sec->count].y = player->CurSector.y - 1;
+				sec->count++;
+			}
+			//â†™
+			if (player->CurSector.y < SECTOR_MAX_Y-1)
+			{
+				sec->around[sec->count].x = player->CurSector.x - 1;
+				sec->around[sec->count].y = player->CurSector.y + 1;
+				sec->count++;
+			}
+
+
+		}
+
+	}
+
+	if(player->direction == dfPACKET_MOVE_DIR_RR)
+	{
+		if (player->CurSector.x < SECTOR_MAX_X-1)
+		{
+			//â­¢
+			sec->around[sec->count].x = player->CurSector.x + 1;
+			sec->around[sec->count].y = player->CurSector.y;
+			sec->count++;
+
+			//â†—
+			if (player->CurSector.y > 0)
+			{
+				sec->around[sec->count].x = player->CurSector.x + 1;
+				sec->around[sec->count].y = player->CurSector.y - 1;
+				sec->count++;
+			}
+			//â†˜
+			if (player->CurSector.y < SECTOR_MAX_Y - 1)
+			{
+				sec->around[sec->count].x = player->CurSector.x + 1;
+				sec->around[sec->count].y = player->CurSector.y + 1;
+				sec->count++;
+			}
+
+
+		}
+
+	}
+	//â­¡
+	if (player->CurSector.y > 0)
+	{
+		sec->around[sec->count].x = player->CurSector.x;
+		sec->around[sec->count].y = player->CurSector.y - 1;
+		sec->count++;
+	}
+
+	//â­£
+	if (player->CurSector.y < SECTOR_MAX_Y - 1)
+	{
+		sec->around[sec->count].x = player->CurSector.x;
+		sec->around[sec->count].y = player->CurSector.y + 1;
+		sec->count++;
+	}
+
+}
