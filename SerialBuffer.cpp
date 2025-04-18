@@ -1,7 +1,5 @@
-
-#include <windows.h>
 #include "SerialBuffer.h"
-
+#include <windows.h>
 
 
 SBuffer::SBuffer():read(0),write(0),BufferSize(BUFFER_DEFAULT),DataSize(0)
@@ -122,8 +120,7 @@ void SBuffer::Clear(void)
 		}
 		return *this;
 	}
-	/*
-	SBuffer& SBuffer::operator << (BYTE value)
+	/*CBuffer& CBuffer::operator << (BYTE value)
 	{
 		if (BufferSize - DataSize >= sizeof(value))
 		{
@@ -160,8 +157,7 @@ void SBuffer::Clear(void)
 		}
 		return *this;
 	}
-	/*
-	SBuffer& SBuffer::operator << (WORD value)
+	/*CBuffer& CBuffer::operator << (WORD value)
 	{
 		if (BufferSize - DataSize >= sizeof(value))
 		{
@@ -218,7 +214,6 @@ void SBuffer::Clear(void)
 		}
 		return *this;
 	}
-	/*
 	SBuffer& SBuffer::operator << (DWORD value)
 	{
 		if (BufferSize - DataSize >= sizeof(value))
@@ -229,7 +224,7 @@ void SBuffer::Clear(void)
 			DataSize += sizeof(value);
 		}
 		return *this;
-	}*/
+	}
 
 	SBuffer& SBuffer::operator << (__int64 value)
 	{
@@ -291,8 +286,7 @@ void SBuffer::Clear(void)
 		}
 		return *this;
 	}
-	/*
-	SBuffer& SBuffer::operator >> (BYTE& value)
+	/*CBuffer& CBuffer::operator >> (BYTE& value)
 	{
 		if (DataSize >= sizeof(value))
 		{
@@ -330,8 +324,7 @@ void SBuffer::Clear(void)
 		}
 		return *this;
 	}
-	/*
-	SBuffer& SBuffer::operator >> (WORD& value)
+	/*CBuffer& CBuffer::operator >> (WORD& value)
 	{
 		if (DataSize >= sizeof(value))
 		{
@@ -390,7 +383,6 @@ void SBuffer::Clear(void)
 		}
 		return *this;
 	}
-	/*
 	SBuffer& SBuffer::operator >> (DWORD& value)
 	{
 		if (DataSize >= sizeof(value))
@@ -401,7 +393,7 @@ void SBuffer::Clear(void)
 			DataSize -= sizeof(value);
 		}
 		return *this;
-	}*/
+	}
 
 	SBuffer& SBuffer::operator >> (__int64 &value)
 	{
